@@ -2,16 +2,36 @@ import React, { useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
-  ScrollView,
+  FlatList,
   TouchableOpacity,
   Animated,
   StyleSheet,
   Dimensions,
+  DimensionValue,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 import { useAppStore } from '../../stores/appStore';
-import type { UserProfile, NightScore, Recommendation, DailyMission, BriefingData } from './types';
+import type { NightScore, Recommendation, DailyMission, BriefingData } from './types';
+
+// âââ ThÃ¨me âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+
+const Theme = {
+  background: '#080810',
+  card: '#111118',
+  cardBorder: '#1C1C28',
+  surface: '#1C1C28',
+  primary: '#3D8BFF',
+  textPrimary: '#E8E8F0',
+  textSecondary: '#A8A8C0',
+  white: '#FFFFFF',
+  scoreHigh: '#34D399',
+  scoreMid: '#3D8BFF',
+  scoreWarn: '#FBBF24',
+  scoreLow: '#F87171',
+  impactMedium: '#FBBF24',
+  impactLow: '#A8A8C0',
+} as const;
 
 // âââ Mock API âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
@@ -54,7 +74,7 @@ async function fetchDailyBriefing(): Promise<BriefingData> {
       {
         id: 'mission-3',
         title: 'CohÃ©rence cardiaque',
-        description: 'Session de 5 min â 5-5-5 respiration',
+        description: 'Session de 5 min â 5-5-5 respiration',
         xpReward: 100,
         estimatedMinutes: 5,
         type: 'mindfulness',
@@ -67,19 +87,20 @@ async function fetchDailyBriefing(): Promise<BriefingData> {
 // âââ Helpers ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+void SCREEN_WIDTH;
 
 function getGreeting(firstName: string): string {
   const hour = new Date().getHours();
   if (hour < 12) return `Bonjour, ${firstName} âï¸`;
-  if (hour < 18) return `Bon aprÃ¨s-midi, ${firstName} ð`;
+  if (hour < 18) return `Bon aprÃ¨s-midi, ${firstName} ð¤`;
   return `Bonsoir, ${firstName} ð`;
 }
 
 function getScoreColor(score: number): string {
-  if (score >= 85) return '#34D399';
-  if (score >= 65) return '#3D8BFF';
-  if (score >= 45) return '#FBBF24';
-  return '#F87171';
+  if (score >= 85) return Theme.scoreHigh;
+  if (score >= 65) return Theme.scoreMid;
+  if (score >= 45) return Theme.scoreWarn;
+  return Theme.scoreLow;
 }
 
 function getScoreLabel(score: number): string {
@@ -93,37 +114,39 @@ function getMissionIcon(type: DailyMission['type']): string {
   const icons: Record<DailyMission['type'], string> = {
     movement: 'ð',
     nutrition: 'ð¥',
-    recovery: 'ð¤',
+    recovery: 'ð´',
     mindfulness: 'ð§',
   };
   return icons[type];
 }
 
 function getImpactBadge(impact: Recommendation['impact']): { label: string; color: string } {
-  if (impact === 'high') return { label: 'ð¥ Impact Ã©levÃ©', color: '#34D399' };
-  if (impact === 'medium') return { label: 'â¡ Impact moyen', color: '#FBBF24' };
-  return { label: 'ð§ Impact faible', color: '#A8A8C0' };
+  if (impact === 'high') return { label: 'ð¥ Impact Ã©levÃ©', color: Theme.scoreHigh };
+  if (impact === 'medium') return { label: 'â¡ Impact moyen', color: Theme.impactMedium };
+  return { label: 'ð§ Impact faible', color: Theme.impactLow };
 }
 
-// âââ Sub-components âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// âââ NightScoreCard âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 interface NightScoreCardProps {
   score: NightScore;
 }
 
-function NightScoreCard({ score }: NightScoreCardProps) {
+const NightScoreCard = React.memo(function NightScoreCard({ score }: NightScoreCardProps) {
   const scoreColor = getScoreColor(score.score);
   const scoreLabel = getScoreLabel(score.score);
 
   const progressAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.timing(progressAnim, {
+    const animation = Animated.timing(progressAnim, {
       toValue: score.score / 100,
       duration: 900,
       delay: 400,
       useNativeDriver: false,
-    }).start();
+    });
+    animation.start();
+    return () => animation.stop();
   }, [progressAnim, score.score]);
 
   const progressWidth = progressAnim.interpolate({
@@ -132,8 +155,8 @@ function NightScoreCard({ score }: NightScoreCardProps) {
   });
 
   const stats = [
-    { label: 'Sommeil profond', value: `${score.deepSleepMinutes}m`, icon: 'ð' },
-    { label: 'Sommeil REM', value: `${score.remMinutes}m`, icon: 'ð' },
+    { label: 'Sommeil profond', value: `${score.deepSleepMinutes}m`, icon: 'ðµ' },
+    { label: 'Sommeil REM', value: `${score.remMinutes}m`, icon: 'ð£' },
     { label: 'RÃ©veils', value: `${score.awakenings}`, icon: 'â¡' },
     { label: 'VFC', value: `${score.hrv}ms`, icon: 'â¤ï¸' },
   ];
@@ -149,17 +172,15 @@ function NightScoreCard({ score }: NightScoreCardProps) {
         </View>
       </View>
 
-      {/* Progress bar */}
       <View style={styles.progressTrack}>
         <Animated.View
           style={[
             styles.progressFill,
-            { width: progressWidth, backgroundColor: scoreColor },
+            { width: progressWidth as unknown as DimensionValue, backgroundColor: scoreColor },
           ]}
         />
       </View>
 
-      {/* Stats grid */}
       <View style={styles.statsGrid}>
         {stats.map((stat) => (
           <View key={stat.label} style={styles.statItem}>
@@ -171,13 +192,17 @@ function NightScoreCard({ score }: NightScoreCardProps) {
       </View>
     </View>
   );
-}
+});
+
+// âââ RecommendationCard âââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 interface RecommendationCardProps {
   recommendation: Recommendation;
 }
 
-function RecommendationCard({ recommendation }: RecommendationCardProps) {
+const RecommendationCard = React.memo(function RecommendationCard({
+  recommendation,
+}: RecommendationCardProps) {
   const badge = getImpactBadge(recommendation.impact);
 
   return (
@@ -197,14 +222,15 @@ function RecommendationCard({ recommendation }: RecommendationCardProps) {
       <Text style={styles.recDescription}>{recommendation.description}</Text>
     </View>
   );
-}
+});
+
+// âââ MissionRow âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 interface MissionRowProps {
   mission: DailyMission;
-  index: number;
 }
 
-function MissionRow({ mission, index }: MissionRowProps) {
+const MissionRow = React.memo(function MissionRow({ mission }: MissionRowProps) {
   return (
     <View style={styles.missionRow}>
       <View style={styles.missionIconWrap}>
@@ -220,47 +246,49 @@ function MissionRow({ mission, index }: MissionRowProps) {
       </View>
     </View>
   );
-}
+});
 
-// âââ Skeleton Loader ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// âââ Skeleton âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
-function SkeletonBlock({
+const SkeletonBlock = React.memo(function SkeletonBlock({
   height,
   width = '100%',
   borderRadius = 10,
   marginBottom = 0,
 }: {
   height: number;
-  width?: string | number;
+  width?: DimensionValue;
   borderRadius?: number;
   marginBottom?: number;
 }) {
   const anim = useRef(new Animated.Value(0.4)).current;
 
   useEffect(() => {
-    Animated.loop(
+    const animation = Animated.loop(
       Animated.sequence([
         Animated.timing(anim, { toValue: 1, duration: 800, useNativeDriver: true }),
         Animated.timing(anim, { toValue: 0.4, duration: 800, useNativeDriver: true }),
       ])
-    ).start();
+    );
+    animation.start();
+    return () => animation.stop();
   }, [anim]);
 
   return (
     <Animated.View
       style={{
         height,
-        width: width as any,
+        width,
         borderRadius,
-        backgroundColor: '#1C1C28',
+        backgroundColor: Theme.surface,
         opacity: anim,
         marginBottom,
       }}
     />
   );
-}
+});
 
-function BriefingSkeleton() {
+const BriefingSkeleton = React.memo(function BriefingSkeleton() {
   return (
     <View style={styles.skeletonWrap}>
       <SkeletonBlock height={22} width="50%" marginBottom={8} />
@@ -271,7 +299,38 @@ function BriefingSkeleton() {
       <SkeletonBlock height={52} borderRadius={26} />
     </View>
   );
+});
+
+// âââ MissionsList âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+
+interface MissionsListProps {
+  missions: DailyMission[];
 }
+
+const MissionsList = React.memo(function MissionsList({ missions }: MissionsListProps) {
+  const renderItem = useCallback(
+    ({ item, index }: { item: DailyMission; index: number }) => (
+      <>
+        <MissionRow mission={item} />
+        {index < missions.length - 1 && <View style={styles.missionDivider} />}
+      </>
+    ),
+    [missions.length]
+  );
+
+  const keyExtractor = useCallback((item: DailyMission) => item.id, []);
+
+  return (
+    <FlatList
+      data={missions}
+      renderItem={renderItem}
+      keyExtractor={keyExtractor}
+      scrollEnabled={false}
+      style={styles.missionsCard}
+      contentContainerStyle={styles.missionsCardContent}
+    />
+  );
+});
 
 // âââ Main Screen ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
@@ -285,14 +344,14 @@ export default function DailyBriefing({ onStart }: DailyBriefingProps) {
   const slideAnim = useRef(new Animated.Value(24)).current;
 
   const { data: briefing, isLoading, isError } = useQuery({
-    queryKey: ['dailyBriefing'],
+    queryKey: ['dailyBriefing', user?.id],
     queryFn: fetchDailyBriefing,
     staleTime: 1000 * 60 * 10,
   });
 
   useEffect(() => {
     if (!isLoading) {
-      Animated.parallel([
+      const animation = Animated.parallel([
         Animated.timing(fadeAnim, {
           toValue: 1,
           duration: 500,
@@ -303,8 +362,11 @@ export default function DailyBriefing({ onStart }: DailyBriefingProps) {
           duration: 500,
           useNativeDriver: true,
         }),
-      ]).start();
+      ]);
+      animation.start();
+      return () => animation.stop();
     }
+    return undefined;
   }, [isLoading, fadeAnim, slideAnim]);
 
   const handleStart = useCallback(() => {
@@ -319,75 +381,78 @@ export default function DailyBriefing({ onStart }: DailyBriefingProps) {
 
   const greeting = getGreeting(user?.firstName ?? 'vous');
 
+  const renderHeader = useCallback(
+    () => (
+      <View style={styles.greetingSection}>
+        <Text style={styles.greeting}>{greeting}</Text>
+        <Text style={styles.dateText}>{dateString}</Text>
+      </View>
+    ),
+    [greeting, dateString]
+  );
+
+  const renderContent = useCallback(() => {
+    if (isLoading) return <BriefingSkeleton />;
+    if (isError) {
+      return (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorEmoji}>â ï¸</Text>
+          <Text style={styles.errorText}>Impossible de charger votre bilan.</Text>
+          <Text style={styles.errorSub}>VÃ©rifiez votre connexion et rÃ©essayez.</Text>
+        </View>
+      );
+    }
+    if (!briefing) return null;
+    return (
+      <Animated.View
+        style={[
+          styles.contentWrap,
+          { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
+        ]}
+      >
+        <NightScoreCard score={briefing.nightScore} />
+
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>ð¡ Recommandation du jour</Text>
+        </View>
+        <RecommendationCard recommendation={briefing.topRecommendation} />
+
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>ð¯ Missions du jour</Text>
+          <View style={styles.missionCountBadge}>
+            <Text style={styles.missionCountText}>{briefing.missions.length}</Text>
+          </View>
+        </View>
+
+        <MissionsList missions={briefing.missions} />
+
+        <TouchableOpacity
+          style={styles.ctaButton}
+          onPress={handleStart}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.ctaText}>Commencer la journÃ©e</Text>
+          <Text style={styles.ctaArrow}>â</Text>
+        </TouchableOpacity>
+
+        <Text style={styles.footer}>â¨ Bilan gÃ©nÃ©rÃ© par Jarvis Â· VIVE</Text>
+      </Animated.View>
+    );
+  }, [isLoading, isError, briefing, fadeAnim, slideAnim, handleStart]);
+
+  const flatListData = [{ key: 'content' }];
+
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      <ScrollView
+      <FlatList
+        data={flatListData}
+        keyExtractor={(item) => item.key}
+        renderItem={renderContent}
+        ListHeaderComponent={renderHeader}
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
-      >
-        {/* Greeting */}
-        <View style={styles.greetingSection}>
-          <Text style={styles.greeting}>{greeting}</Text>
-          <Text style={styles.dateText}>{dateString}</Text>
-        </View>
-
-        {isLoading ? (
-          <BriefingSkeleton />
-        ) : isError ? (
-          <View style={styles.errorContainer}>
-            <Text style={styles.errorEmoji}>â ï¸</Text>
-            <Text style={styles.errorText}>Impossible de charger votre bilan.</Text>
-            <Text style={styles.errorSub}>VÃ©rifiez votre connexion et rÃ©essayez.</Text>
-          </View>
-        ) : briefing ? (
-          <Animated.View
-            style={[
-              styles.contentWrap,
-              { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
-            ]}
-          >
-            {/* Night Score */}
-            <NightScoreCard score={briefing.nightScore} />
-
-            {/* Top Recommendation */}
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>ð¡ Recommandation du jour</Text>
-            </View>
-            <RecommendationCard recommendation={briefing.topRecommendation} />
-
-            {/* Missions preview */}
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>ð¯ Missions du jour</Text>
-              <View style={styles.missionCountBadge}>
-                <Text style={styles.missionCountText}>{briefing.missions.length}</Text>
-              </View>
-            </View>
-            <View style={styles.missionsCard}>
-              {briefing.missions.map((mission, index) => (
-                <React.Fragment key={mission.id}>
-                  <MissionRow mission={mission} index={index} />
-                  {index < briefing.missions.length - 1 && (
-                    <View style={styles.missionDivider} />
-                  )}
-                </React.Fragment>
-              ))}
-            </View>
-
-            {/* CTA */}
-            <TouchableOpacity
-              style={styles.ctaButton}
-              onPress={handleStart}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.ctaText}>Commencer la journÃ©e</Text>
-              <Text style={styles.ctaArrow}>â</Text>
-            </TouchableOpacity>
-
-            <Text style={styles.footer}>â¨ Bilan gÃ©nÃ©rÃ© par Jarvis Â· VIVE</Text>
-          </Animated.View>
-        ) : null}
-      </ScrollView>
+      />
     </SafeAreaView>
   );
 }
@@ -397,7 +462,7 @@ export default function DailyBriefing({ onStart }: DailyBriefingProps) {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: '#080810',
+    backgroundColor: Theme.background,
   },
   scroll: {
     flex: 1,
@@ -414,13 +479,13 @@ const styles = StyleSheet.create({
   greeting: {
     fontSize: 26,
     fontWeight: '700',
-    color: '#E8E8F0',
+    color: Theme.textPrimary,
     letterSpacing: 0.2,
     marginBottom: 4,
   },
   dateText: {
     fontSize: 14,
-    color: '#A8A8C0',
+    color: Theme.textSecondary,
     textTransform: 'capitalize',
     letterSpacing: 0.3,
   },
@@ -430,19 +495,18 @@ const styles = StyleSheet.create({
   skeletonWrap: {
     flex: 1,
   },
-  // Night score card
   card: {
-    backgroundColor: '#111118',
+    backgroundColor: Theme.card,
     borderRadius: 20,
     padding: 20,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#1C1C28',
+    borderColor: Theme.cardBorder,
   },
   cardLabel: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#A8A8C0',
+    color: Theme.textSecondary,
     letterSpacing: 1.2,
     textTransform: 'uppercase',
     marginBottom: 12,
@@ -469,12 +533,12 @@ const styles = StyleSheet.create({
   },
   scoreMax: {
     fontSize: 14,
-    color: '#A8A8C0',
+    color: Theme.textSecondary,
     marginTop: 2,
   },
   progressTrack: {
     height: 4,
-    backgroundColor: '#1C1C28',
+    backgroundColor: Theme.cardBorder,
     borderRadius: 2,
     overflow: 'hidden',
     marginBottom: 20,
@@ -498,16 +562,15 @@ const styles = StyleSheet.create({
   statValue: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#E8E8F0',
+    color: Theme.textPrimary,
     marginBottom: 2,
   },
   statLabel: {
     fontSize: 10,
-    color: '#A8A8C0',
+    color: Theme.textSecondary,
     textAlign: 'center',
     letterSpacing: 0.2,
   },
-  // Section header
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -517,29 +580,28 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#E8E8F0',
+    color: Theme.textPrimary,
     letterSpacing: 0.2,
   },
   missionCountBadge: {
-    backgroundColor: '#3D8BFF',
+    backgroundColor: Theme.primary,
     borderRadius: 10,
     paddingHorizontal: 7,
     paddingVertical: 2,
   },
   missionCountText: {
-    color: '#FFFFFF',
+    color: Theme.white,
     fontSize: 11,
     fontWeight: '700',
   },
-  // Recommendation card
   recCard: {
-    backgroundColor: '#111118',
+    backgroundColor: Theme.card,
     borderRadius: 20,
     padding: 20,
     marginBottom: 24,
     borderWidth: 1,
-    borderColor: '#3D8BFF',
-    shadowColor: '#3D8BFF',
+    borderColor: Theme.primary,
+    shadowColor: Theme.primary,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.12,
     shadowRadius: 12,
@@ -557,13 +619,13 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   recNumBadge: {
-    backgroundColor: '#3D8BFF',
+    backgroundColor: Theme.primary,
     borderRadius: 8,
     paddingHorizontal: 8,
     paddingVertical: 3,
   },
   recNum: {
-    color: '#FFFFFF',
+    color: Theme.white,
     fontSize: 12,
     fontWeight: '800',
     letterSpacing: 0.5,
@@ -585,23 +647,24 @@ const styles = StyleSheet.create({
   recTitle: {
     fontSize: 17,
     fontWeight: '700',
-    color: '#E8E8F0',
+    color: Theme.textPrimary,
     marginBottom: 8,
     lineHeight: 24,
   },
   recDescription: {
     fontSize: 14,
-    color: '#A8A8C0',
+    color: Theme.textSecondary,
     lineHeight: 21,
   },
-  // Missions
   missionsCard: {
-    backgroundColor: '#111118',
+    backgroundColor: Theme.card,
     borderRadius: 20,
-    padding: 4,
     marginBottom: 28,
     borderWidth: 1,
-    borderColor: '#1C1C28',
+    borderColor: Theme.cardBorder,
+  },
+  missionsCardContent: {
+    padding: 4,
   },
   missionRow: {
     flexDirection: 'row',
@@ -613,7 +676,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: '#1C1C28',
+    backgroundColor: Theme.surface,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
@@ -627,12 +690,12 @@ const styles = StyleSheet.create({
   missionTitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#E8E8F0',
+    color: Theme.textPrimary,
     marginBottom: 2,
   },
   missionDesc: {
     fontSize: 12,
-    color: '#A8A8C0',
+    color: Theme.textSecondary,
     lineHeight: 17,
   },
   missionMeta: {
@@ -642,21 +705,20 @@ const styles = StyleSheet.create({
   missionXp: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#3D8BFF',
+    color: Theme.primary,
     marginBottom: 2,
   },
   missionTime: {
     fontSize: 11,
-    color: '#A8A8C0',
+    color: Theme.textSecondary,
   },
   missionDivider: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: '#1C1C28',
+    backgroundColor: Theme.cardBorder,
     marginHorizontal: 14,
   },
-  // CTA
   ctaButton: {
-    backgroundColor: '#3D8BFF',
+    backgroundColor: Theme.primary,
     borderRadius: 26,
     paddingVertical: 16,
     paddingHorizontal: 28,
@@ -664,7 +726,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    shadowColor: '#3D8BFF',
+    shadowColor: Theme.primary,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.35,
     shadowRadius: 16,
@@ -672,25 +734,23 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   ctaText: {
-    color: '#FFFFFF',
+    color: Theme.white,
     fontSize: 17,
     fontWeight: '700',
     letterSpacing: 0.3,
   },
   ctaArrow: {
-    color: '#FFFFFF',
+    color: Theme.white,
     fontSize: 18,
     fontWeight: '700',
   },
-  // Footer
   footer: {
     textAlign: 'center',
     fontSize: 12,
-    color: '#A8A8C0',
+    color: Theme.textSecondary,
     letterSpacing: 0.3,
     opacity: 0.7,
   },
-  // Error
   errorContainer: {
     flex: 1,
     alignItems: 'center',
@@ -704,13 +764,13 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#E8E8F0',
+    color: Theme.textPrimary,
     marginBottom: 6,
     textAlign: 'center',
   },
   errorSub: {
     fontSize: 13,
-    color: '#A8A8C0',
+    color: Theme.textSecondary,
     textAlign: 'center',
   },
 });

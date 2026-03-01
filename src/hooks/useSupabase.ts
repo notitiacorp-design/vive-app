@@ -1,7 +1,8 @@
 /**
  * @file useSupabase.ts
- * @description React Query wrapper hooks for all Supabase operations in the VIVE app.
- * Covers profile, sleep scores, missions, check-ins, boxes, quests, and collectibles.
+ * @description Hooks React Query pour toutes les opÃ©rations Supabase dans l'app VIVE.
+ * Couvre le profil, les scores de sommeil, les missions, les check-ins,
+ * les boÃ®tes, les quÃªtes et les collectibles.
  *
  * NOTE DE SÃCURITÃ (correction #4):
  * Les donnÃ©es de santÃ© (SleepScore, HeartRate, HRV) ne doivent PAS Ãªtre persistÃ©es
@@ -24,7 +25,7 @@ import {
 import { supabase } from '../lib/supabase';
 
 // ---------------------------------------------------------------------------
-// Custom Error Class (correction #2)
+// Classe d'erreur personnalisÃ©e (correction #2)
 // ---------------------------------------------------------------------------
 
 export type SupabaseErrorCode =
@@ -49,7 +50,7 @@ export class SupabaseError extends Error {
 }
 
 // ---------------------------------------------------------------------------
-// Database Types
+// Types de la base de donnÃ©es
 // ---------------------------------------------------------------------------
 
 export interface Profile {
@@ -158,7 +159,7 @@ export interface Collectible {
 }
 
 // ---------------------------------------------------------------------------
-// Pagination Types (correction #6)
+// Types de pagination (correction #7)
 // ---------------------------------------------------------------------------
 
 export interface CollectiblesPage {
@@ -169,7 +170,7 @@ export interface CollectiblesPage {
 export const COLLECTIBLES_PAGE_SIZE = 20;
 
 // ---------------------------------------------------------------------------
-// Query Key Factory
+// Fabrique de clÃ©s de requÃªte
 // ---------------------------------------------------------------------------
 
 export const queryKeys = {
@@ -185,12 +186,12 @@ export const queryKeys = {
 } as const;
 
 // ---------------------------------------------------------------------------
-// Centralized current user hook (correction #5)
+// Hook utilisateur courant centralisÃ© (correction #6)
 // ---------------------------------------------------------------------------
 
 /**
  * Hook centralisÃ© pour rÃ©cupÃ©rer l'utilisateur courant avec cache React Query.
- * Ãvite de multiples appels rÃ©seau Ã  supabase.auth.getUser() par query.
+ * Ãvite de multiples appels rÃ©seau Ã  supabase.auth.getUser() par requÃªte.
  */
 export function useCurrentUser(): UseQueryResult<string, SupabaseError> {
   return useQuery<string, SupabaseError>({
@@ -200,7 +201,7 @@ export function useCurrentUser(): UseQueryResult<string, SupabaseError> {
       if (error || !data.user) {
         throw new SupabaseError(
           'UNAUTHENTICATED',
-          "L'utilisateur n'est pas authentifiÃ©",
+          "L'utilisateur n'est pas authentifiÃ©.",
         );
       }
       return data.user.id;
@@ -211,7 +212,7 @@ export function useCurrentUser(): UseQueryResult<string, SupabaseError> {
 }
 
 // ---------------------------------------------------------------------------
-// Auth Helper (correction #2 + #5)
+// Helper d'authentification (corrections #2 + #6)
 // ---------------------------------------------------------------------------
 
 /**
@@ -223,14 +224,14 @@ async function getCurrentUserId(): Promise<string> {
   if (error || !data.user) {
     throw new SupabaseError(
       'UNAUTHENTICATED',
-      "L'utilisateur n'est pas authentifiÃ©",
+      "L'utilisateur n'est pas authentifiÃ©.",
     );
   }
   return data.user.id;
 }
 
 // ---------------------------------------------------------------------------
-// Validation Helpers (correction #3)
+// Helpers de validation (correction #3)
 // ---------------------------------------------------------------------------
 
 const DISPLAY_NAME_MAX_LENGTH = 50;
@@ -245,7 +246,7 @@ function validateProfileUpdate(updates: ProfileUpdate): void {
     if (name.length < DISPLAY_NAME_MIN_LENGTH) {
       throw new SupabaseError(
         'VALIDATION_ERROR',
-        'Le nom d\'affichage ne peut pas Ãªtre vide.',
+        "Le nom d'affichage ne peut pas Ãªtre vide.",
       );
     }
     if (name.length > DISPLAY_NAME_MAX_LENGTH) {
@@ -257,7 +258,7 @@ function validateProfileUpdate(updates: ProfileUpdate): void {
     if (!DISPLAY_NAME_REGEX.test(name)) {
       throw new SupabaseError(
         'VALIDATION_ERROR',
-        'Le nom d\'affichage contient des caractÃ¨res non autorisÃ©s.',
+        "Le nom d'affichage contient des caractÃ¨res non autorisÃ©s.",
       );
     }
   }
@@ -273,12 +274,12 @@ function validateProfileUpdate(updates: ProfileUpdate): void {
 }
 
 // ---------------------------------------------------------------------------
-// Profile Hooks
+// Hooks de profil
 // ---------------------------------------------------------------------------
 
 /**
- * Fetches the current user's profile from Supabase.
- * Returns a React Query result with the profile data.
+ * RÃ©cupÃ¨re le profil de l'utilisateur courant depuis Supabase.
+ * Retourne un rÃ©sultat React Query avec les donnÃ©es du profil.
  */
 export function useProfile(
   queryOptions?: Omit<UseQueryOptions<Profile, SupabaseError>, 'queryKey' | 'queryFn'>,
@@ -312,9 +313,9 @@ export function useProfile(
 }
 
 /**
- * Mutation hook to update the current user's profile.
- * Validates inputs before sending to Supabase.
- * Automatically invalidates the profile query on success.
+ * Hook de mutation pour mettre Ã  jour le profil de l'utilisateur courant.
+ * Valide les entrÃ©es avant l'envoi Ã  Supabase (correction #3).
+ * Invalide automatiquement la requÃªte de profil en cas de succÃ¨s.
  */
 export function useUpdateProfile(): UseMutationResult<Profile, SupabaseError, ProfileUpdate> {
   const queryClient = useQueryClient();
@@ -324,7 +325,7 @@ export function useUpdateProfile(): UseMutationResult<Profile, SupabaseError, Pr
       // Validation cÃ´tÃ© client avant l'appel Supabase (correction #3)
       validateProfileUpdate(updates);
 
-      // Trim du display_name si prÃ©sent
+      // Assainissement du display_name si prÃ©sent
       const sanitizedUpdates: ProfileUpdate = {
         ...updates,
         ...(updates.display_name !== undefined
@@ -369,14 +370,14 @@ export function useUpdateProfile(): UseMutationResult<Profile, SupabaseError, Pr
 }
 
 // ---------------------------------------------------------------------------
-// Sleep Score Hooks
+// Hooks de scores de sommeil
 // ---------------------------------------------------------------------------
 
 /**
- * Fetches sleep scores for the past N days.
- * NOTE: Les donnÃ©es de santÃ© ne doivent PAS Ãªtre persistÃ©es dans le cache.
+ * RÃ©cupÃ¨re les scores de sommeil des N derniers jours.
+ * NOTE : Les donnÃ©es de santÃ© ne doivent PAS Ãªtre persistÃ©es dans le cache (correction #4).
  *
- * @param days - Number of days to look back (default: 7)
+ * @param days - Nombre de jours Ã  remonter (dÃ©faut : 7)
  */
 export function useSleepScores(
   days: number = 7,
@@ -405,21 +406,22 @@ export function useSleepScores(
         );
       }
 
+      // Marquer explicitement pour ne pas persister (correction #4) :
+      // Le persistor doit exclure la clÃ© 'supabase/sleepScores' cÃ´tÃ© configuration.
       return (data ?? []) as SleepScore[];
     },
     staleTime: 5 * 60 * 1000,
-    // Marquer explicitement pour ne pas persister (correction #4)
-    // Le persistor doit exclure la clÃ© 'supabase/sleepScores' cÃ´tÃ© configuration
     ...queryOptions,
   });
 }
 
 // ---------------------------------------------------------------------------
-// Mission Hooks
+// Hooks de missions
 // ---------------------------------------------------------------------------
 
 /**
- * Fetches active missions for the current user.
+ * RÃ©cupÃ¨re les missions actives de l'utilisateur courant.
+ * Utilise .eq() au lieu de .in() pour un seul statut (correction #8).
  */
 export function useMissions(
   queryOptions?: Omit<UseQueryOptions<Mission[], SupabaseError>, 'queryKey' | 'queryFn'>,
@@ -433,7 +435,7 @@ export function useMissions(
         .from('missions')
         .select('*')
         .eq('user_id', userId)
-        .in('status', ['active'])
+        .eq('status', 'active') // correction #8 : .eq() plus efficace que .in() avec un seul Ã©lÃ©ment
         .order('due_date', { ascending: true });
 
       if (error) {
@@ -456,8 +458,8 @@ export interface UpdateMissionStatusInput {
 }
 
 /**
- * Mutation hook to update a mission's status.
- * Automatically invalidates missions and profile (for XP) on success.
+ * Hook de mutation pour mettre Ã  jour le statut d'une mission.
+ * Invalide automatiquement les missions et le profil (pour l'XP) en cas de succÃ¨s.
  */
 export function useUpdateMissionStatus(): UseMutationResult<
   Mission,
@@ -505,12 +507,12 @@ export function useUpdateMissionStatus(): UseMutationResult<
 }
 
 // ---------------------------------------------------------------------------
-// Check-in Hooks
+// Hooks de check-in
 // ---------------------------------------------------------------------------
 
 /**
- * Mutation hook to submit a daily check-in.
- * Invalidates check-in and profile queries on success.
+ * Hook de mutation pour soumettre un check-in quotidien.
+ * Invalide les requÃªtes de check-in et de profil en cas de succÃ¨s.
  */
 export function useCheckin(): UseMutationResult<Checkin, SupabaseError, CheckinInput> {
   const queryClient = useQueryClient();
@@ -559,11 +561,11 @@ export function useCheckin(): UseMutationResult<Checkin, SupabaseError, CheckinI
 }
 
 // ---------------------------------------------------------------------------
-// Box Hooks
+// Hooks de boÃ®tes
 // ---------------------------------------------------------------------------
 
 /**
- * Fetches the user's box history, ordered by most recent first.
+ * RÃ©cupÃ¨re l'historique des boÃ®tes de l'utilisateur, de la plus rÃ©cente Ã  la plus ancienne.
  */
 export function useBoxes(
   queryOptions?: Omit<UseQueryOptions<Box[], SupabaseError>, 'queryKey' | 'queryFn'>,
@@ -605,14 +607,33 @@ export interface OpenBoxResult {
 }
 
 /**
- * Mutation hook to open a box.
- * Calls a Supabase edge function for server-side reward logic.
+ * Hook de mutation pour ouvrir une boÃ®te.
+ * VÃ©rifie cÃ´tÃ© client que la boÃ®te appartient Ã  l'utilisateur avant d'appeler
+ * l'edge function (correction #5). La RLS serveur reste la protection principale.
  */
 export function useOpenBox(): UseMutationResult<OpenBoxResult, SupabaseError, OpenBoxInput> {
   const queryClient = useQueryClient();
 
   return useMutation<OpenBoxResult, SupabaseError, OpenBoxInput>({
     mutationFn: async ({ boxId }) => {
+      // VÃ©rification cÃ´tÃ© client que la boÃ®te appartient Ã  l'utilisateur (correction #5)
+      const userId = await getCurrentUserId();
+
+      const { data: boxData, error: boxError } = await supabase
+        .from('boxes')
+        .select('id')
+        .eq('id', boxId)
+        .eq('user_id', userId)
+        .eq('opened', false)
+        .single();
+
+      if (boxError || !boxData) {
+        throw new SupabaseError(
+          'NOT_FOUND',
+          "La boÃ®te est introuvable, dÃ©jÃ  ouverte ou n'appartient pas Ã  l'utilisateur.",
+        );
+      }
+
       const { data, error } = await supabase.functions.invoke<OpenBoxResult>(
         'open-box',
         { body: { box_id: boxId } },
@@ -643,11 +664,12 @@ export function useOpenBox(): UseMutationResult<OpenBoxResult, SupabaseError, Op
 }
 
 // ---------------------------------------------------------------------------
-// Quest Hooks
+// Hooks de quÃªtes
 // ---------------------------------------------------------------------------
 
 /**
- * Fetches active quests with their current progress.
+ * RÃ©cupÃ¨re les quÃªtes actives avec leur progression actuelle.
+ * Utilise .eq() au lieu de .in() pour un seul statut (correction #8).
  */
 export function useQuests(
   queryOptions?: Omit<UseQueryOptions<Quest[], SupabaseError>, 'queryKey' | 'queryFn'>,
@@ -661,7 +683,7 @@ export function useQuests(
         .from('quests')
         .select('*')
         .eq('user_id', userId)
-        .in('status', ['active'])
+        .eq('status', 'active') // correction #8 : .eq() plus efficace que .in() avec un seul Ã©lÃ©ment
         .gt('expires_at', new Date().toISOString())
         .order('expires_at', { ascending: true });
 
@@ -680,19 +702,25 @@ export function useQuests(
 }
 
 // ---------------------------------------------------------------------------
-// Collectible Hooks (correction #6 : pagination via useInfiniteQuery)
+// Hooks de collectibles (correction #7 : pagination via useInfiniteQuery)
 // ---------------------------------------------------------------------------
 
 /**
- * Fetches collectibles owned by the current user with infinite scroll pagination.
- * Remplace useCollectibles() qui chargeait TOUT sans limite.
+ * RÃ©cupÃ¨re les collectibles de l'utilisateur courant avec pagination infinie.
+ * Remplace le chargement sans limite par une pagination cÃ´tÃ© serveur (correction #7).
  *
- * @param pageSize - Nombre d'items par page (dÃ©faut: COLLECTIBLES_PAGE_SIZE)
+ * @param pageSize - Nombre d'Ã©lÃ©ments par page (dÃ©faut : COLLECTIBLES_PAGE_SIZE)
  */
 export function useCollectibles(
   pageSize: number = COLLECTIBLES_PAGE_SIZE,
 ): UseInfiniteQueryResult<InfiniteData<CollectiblesPage>, SupabaseError> {
-  return useInfiniteQuery<CollectiblesPage, SupabaseError, InfiniteData<CollectiblesPage>, readonly string[], number>({
+  return useInfiniteQuery<
+    CollectiblesPage,
+    SupabaseError,
+    InfiniteData<CollectiblesPage>,
+    readonly string[],
+    number
+  >({
     queryKey: queryKeys.collectiblesInfinite,
     initialPageParam: 0,
     queryFn: async ({ pageParam }) => {
@@ -724,7 +752,7 @@ export function useCollectibles(
 }
 
 // ---------------------------------------------------------------------------
-// Convenience Re-exports
+// RÃ©-exports de commoditÃ©
 // ---------------------------------------------------------------------------
 
 export {

@@ -1,10 +1,10 @@
 /**
  * src/lib/healthconnect.ts
- * VIVE App â Health Connect wrapper (Android only)
+ * VIVE App â Health Connect wrapper (Android uniquement)
  *
- * Provides a clean, typed API over react-native-health-connect.
- * All public functions are no-ops (returning empty/null) on iOS so that
- * callers do not need platform guards everywhere.
+ * Fournit une API typÃ©e et propre au-dessus de react-native-health-connect.
+ * Toutes les fonctions publiques sont des no-ops (retournant vide/null) sur iOS
+ * afin que les appelants n'aient pas besoin de gardes de plateforme partout.
  */
 
 import { Platform } from 'react-native';
@@ -15,11 +15,22 @@ import {
   getSdkStatus,
   SdkAvailabilityStatus,
   type Permission,
-  type ReadRecordsOptions,
 } from 'react-native-health-connect';
 
 // ---------------------------------------------------------------------------
-// Error class
+// Type explicite pour le filtre de plage temporelle (supprime l'usage de 'any')
+// Correction [ModÃ©rÃ©][A] : type explicite TimeRangeFilter plutÃ´t que
+// ReadRecordsOptions<any>['timeRangeFilter'] qui propage le 'any'.
+// ---------------------------------------------------------------------------
+
+export interface TimeRangeFilter {
+  operator: 'between' | 'before' | 'after';
+  startTime: string;
+  endTime: string;
+}
+
+// ---------------------------------------------------------------------------
+// Classe d'erreur
 // ---------------------------------------------------------------------------
 export class HealthConnectError extends Error {
   public readonly code: string;
@@ -32,17 +43,8 @@ export class HealthConnectError extends Error {
 }
 
 // ---------------------------------------------------------------------------
-// Return-type interfaces
+// Interfaces de types de retour publics
 // ---------------------------------------------------------------------------
-
-export interface HCSleepSession {
-  startTime: string;
-  endTime: string;
-  /** DurÃ©e totale de la session en minutes. */
-  durationMinutes: number;
-  /** Intervalles de phases de sommeil individuels au sein de la session. */
-  stages: HCSleepStage[];
-}
 
 export interface HCSleepStage {
   startTime: string;
@@ -53,6 +55,15 @@ export interface HCSleepStage {
    * 4 = LÃGER, 5 = PROFOND, 6 = REM
    */
   stage: number;
+}
+
+export interface HCSleepSession {
+  startTime: string;
+  endTime: string;
+  /** DurÃ©e totale de la session en minutes. */
+  durationMinutes: number;
+  /** Intervalles de phases de sommeil individuels au sein de la session. */
+  stages: HCSleepStage[];
 }
 
 export interface HCHeartRateSample {
@@ -67,15 +78,9 @@ export interface HCHeartRateRecord {
   samples: HCHeartRateSample[];
 }
 
-export interface HCHRVSample {
-  time: string;
-  /** Racine carrÃ©e de la moyenne des diffÃ©rences successives au carrÃ© (RMSSD) en millisecondes. */
-  rmssd: number;
-}
-
 export interface HCHRVRecord {
   time: string;
-  /** RMSSD en millisecondes. */
+  /** RMSSD en millisecondes (racine carrÃ©e de la moyenne des diffÃ©rences successives au carrÃ©). */
   rmssd: number;
 }
 
@@ -87,7 +92,7 @@ export interface HCStepRecord {
 
 /**
  * Enregistrement de calories (actives ou totales) provenant de Health Connect.
- * Correction [Important][A] ligne ~268 : type distinct pour les calories,
+ * Correction [Important][A] : type distinct pour les calories,
  * sÃ©parÃ© de HCStepRecord qui concerne les pas.
  */
 export interface HCCalorieRecord {
@@ -103,7 +108,7 @@ export interface HCCalorieRecord {
 
 /**
  * Ensemble complet des permissions Health Connect requises par VIVE.
- * Correction [Critique][A] ligne ~90 : utilisation de 'HeartRateVariabilityRmssd'
+ * Correction [Critique][A] : utilisation de 'HeartRateVariabilityRmssd'
  * qui est le nom exact du record type dans l'API react-native-health-connect,
  * harmonisÃ© avec useHealthConnect.ts.
  * Ajustez la liste pour correspondre aux dÃ©clarations dans AndroidManifest.xml.
@@ -123,19 +128,6 @@ export const HEALTH_CONNECT_PERMISSIONS: Permission[] = [
   { accessType: 'write', recordType: 'Steps' },
   { accessType: 'write', recordType: 'ActiveCaloriesBurned' },
 ];
-
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
-/** Construit un TimeRangeFilter standard pour une requÃªte sur une fenÃªtre de dates. */
-function timeRangeFilter(start: Date, end: Date): ReadRecordsOptions<any>['timeRangeFilter'] {
-  return {
-    operator: 'between',
-    startTime: start.toISOString(),
-    endTime: end.toISOString(),
-  };
-}
 
 // ---------------------------------------------------------------------------
 // Interfaces internes pour le mapping des records bruts
@@ -184,7 +176,95 @@ interface RawCalorieRecord {
 }
 
 // ---------------------------------------------------------------------------
-// Public API
+// Helpers internes
+// ---------------------------------------------------------------------------
+
+/**
+ * Construit un TimeRangeFilter standard pour une requÃªte sur une fenÃªtre de dates.
+ * Correction [ModÃ©rÃ©][A] : type de retour explicite TimeRangeFilter,
+ * suppression de ReadRecordsOptions<any>['timeRangeFilter'].
+ */
+function buildTimeRangeFilter(start: Date, end: Date): TimeRangeFilter {
+  return {
+    operator: 'between',
+    startTime: start.toISOString(),
+    endTime: end.toISOString(),
+  };
+}
+
+/**
+ * Mappe un enregistrement brut vers HCSleepSession.
+ */
+function mapSleepRecord(record: RawSleepRecord): HCSleepSession {
+  const startMs = new Date(record.startTime).getTime();
+  const endMs = new Date(record.endTime).getTime();
+  const stages: HCSleepStage[] = (record.stages ?? []).map(
+    (s: RawSleepStage): HCSleepStage => ({
+      startTime: s.startTime,
+      endTime: s.endTime,
+      stage: s.stage,
+    }),
+  );
+  return {
+    startTime: record.startTime,
+    endTime: record.endTime,
+    durationMinutes: Math.round((endMs - startMs) / 60_000),
+    stages,
+  };
+}
+
+/**
+ * Mappe un enregistrement brut vers HCHeartRateRecord.
+ */
+function mapHeartRateRecord(record: RawHRRecord): HCHeartRateRecord {
+  return {
+    startTime: record.startTime,
+    endTime: record.endTime,
+    samples: (record.samples ?? []).map(
+      (s: RawHRSample): HCHeartRateSample => ({
+        time: s.time,
+        beatsPerMinute: s.beatsPerMinute,
+      }),
+    ),
+  };
+}
+
+/**
+ * Mappe un enregistrement brut vers HCHRVRecord.
+ */
+function mapHRVRecord(record: RawHRVRecord): HCHRVRecord {
+  return {
+    time: record.time,
+    // Health Connect stocke la VFC sous forme de RMSSD en millisecondes.
+    rmssd: record.heartRateVariabilityMillis,
+  };
+}
+
+/**
+ * Mappe un enregistrement brut vers HCStepRecord.
+ */
+function mapStepRecord(record: RawStepRecord): HCStepRecord {
+  return {
+    startTime: record.startTime,
+    endTime: record.endTime,
+    count: record.count,
+  };
+}
+
+/**
+ * Mappe un enregistrement brut vers HCCalorieRecord.
+ */
+function mapCalorieRecord(record: RawCalorieRecord): HCCalorieRecord {
+  return {
+    startTime: record.startTime,
+    endTime: record.endTime,
+    // L'Ã©nergie est retournÃ©e sous forme d'objet { inKilocalories: number }
+    kilocalories: record.energy?.inKilocalories ?? 0,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// API publique
 // ---------------------------------------------------------------------------
 
 /**
@@ -212,7 +292,7 @@ export async function initHealthConnect(): Promise<boolean> {
 
     if (status === SdkAvailabilityStatus.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED) {
       throw new HealthConnectError(
-        'Health Connect nÃ©cessite une mise Ã  jour du fournisseur. Veuillez mettre Ã  jour l\'application Health Connect.',
+        "Health Connect nÃ©cessite une mise Ã  jour du fournisseur. Veuillez mettre Ã  jour l'application Health Connect.",
         'PROVIDER_UPDATE_REQUIRED',
       );
     }
@@ -221,7 +301,7 @@ export async function initHealthConnect(): Promise<boolean> {
     const initialised = await initialize();
     if (!initialised) {
       throw new HealthConnectError(
-        'Le SDK Health Connect n\'a pas pu s\'initialiser.',
+        "Le SDK Health Connect n'a pas pu s'initialiser.",
         'INIT_FAILED',
       );
     }
@@ -240,7 +320,7 @@ export async function initHealthConnect(): Promise<boolean> {
   } catch (err) {
     if (err instanceof HealthConnectError) throw err;
     throw new HealthConnectError(
-      `Ãchec de l'initialisation de Health Connect : ${err}`,
+      `Ãchec de l'initialisation de Health Connect : ${String(err)}`,
       'INIT_ERROR',
     );
   }
@@ -261,25 +341,10 @@ export async function querySleepSessions(
 
   try {
     const { records } = await readRecords('SleepSession', {
-      timeRangeFilter: timeRangeFilter(start, end),
+      timeRangeFilter: buildTimeRangeFilter(start, end),
     });
 
-    return (records as unknown as RawSleepRecord[]).map((record) => {
-      const startMs = new Date(record.startTime).getTime();
-      const endMs = new Date(record.endTime).getTime();
-      const stages: HCSleepStage[] = (record.stages ?? []).map((s) => ({
-        startTime: s.startTime,
-        endTime: s.endTime,
-        stage: s.stage,
-      }));
-
-      return {
-        startTime: record.startTime,
-        endTime: record.endTime,
-        durationMinutes: Math.round((endMs - startMs) / 60_000),
-        stages,
-      };
-    });
+    return (records as unknown as RawSleepRecord[]).map(mapSleepRecord);
   } catch (err) {
     console.error('[VIVE/HealthConnect] Erreur querySleepSessions :', err);
     throw err instanceof HealthConnectError
@@ -303,17 +368,10 @@ export async function queryHeartRate(
 
   try {
     const { records } = await readRecords('HeartRate', {
-      timeRangeFilter: timeRangeFilter(start, end),
+      timeRangeFilter: buildTimeRangeFilter(start, end),
     });
 
-    return (records as unknown as RawHRRecord[]).map((record) => ({
-      startTime: record.startTime,
-      endTime: record.endTime,
-      samples: (record.samples ?? []).map((s) => ({
-        time: s.time,
-        beatsPerMinute: s.beatsPerMinute,
-      })),
-    }));
+    return (records as unknown as RawHRRecord[]).map(mapHeartRateRecord);
   } catch (err) {
     console.error('[VIVE/HealthConnect] Erreur queryHeartRate :', err);
     throw err instanceof HealthConnectError
@@ -326,7 +384,7 @@ export async function queryHeartRate(
  * Interroge les enregistrements de variabilitÃ© de la frÃ©quence cardiaque
  * (VFC / RMSSD) depuis Health Connect.
  *
- * Correction [Critique][A] ligne ~90 : utilise 'HeartRateVariabilityRmssd'
+ * Correction [Critique][A] : utilise 'HeartRateVariabilityRmssd'
  * (nom exact dans l'API react-native-health-connect), harmonisÃ© avec
  * useHealthConnect.ts.
  *
@@ -342,14 +400,10 @@ export async function queryHRV(
 
   try {
     const { records } = await readRecords('HeartRateVariabilityRmssd', {
-      timeRangeFilter: timeRangeFilter(start, end),
+      timeRangeFilter: buildTimeRangeFilter(start, end),
     });
 
-    return (records as unknown as RawHRVRecord[]).map((record) => ({
-      time: record.time,
-      // Health Connect stocke la VFC sous forme de RMSSD en millisecondes.
-      rmssd: record.heartRateVariabilityMillis,
-    }));
+    return (records as unknown as RawHRVRecord[]).map(mapHRVRecord);
   } catch (err) {
     console.error('[VIVE/HealthConnect] Erreur queryHRV :', err);
     throw err instanceof HealthConnectError
@@ -373,14 +427,10 @@ export async function querySteps(
 
   try {
     const { records } = await readRecords('Steps', {
-      timeRangeFilter: timeRangeFilter(start, end),
+      timeRangeFilter: buildTimeRangeFilter(start, end),
     });
 
-    return (records as unknown as RawStepRecord[]).map((record) => ({
-      startTime: record.startTime,
-      endTime: record.endTime,
-      count: record.count,
-    }));
+    return (records as unknown as RawStepRecord[]).map(mapStepRecord);
   } catch (err) {
     console.error('[VIVE/HealthConnect] Erreur querySteps :', err);
     throw err instanceof HealthConnectError
@@ -392,7 +442,7 @@ export async function querySteps(
 /**
  * Interroge les enregistrements de calories actives brÃ»lÃ©es depuis Health Connect.
  *
- * Correction [Important][A] ligne ~268 : retourne dÃ©sormais HCCalorieRecord[]
+ * Correction [Important][A] : retourne dÃ©sormais HCCalorieRecord[]
  * (type sÃ©mantiquement correct pour des calories) plutÃ´t que HCStepRecord[].
  * Le champ 'kilocalories' remplace 'count' pour plus de clartÃ©.
  *
@@ -408,15 +458,10 @@ export async function queryActiveCalories(
 
   try {
     const { records } = await readRecords('ActiveCaloriesBurned', {
-      timeRangeFilter: timeRangeFilter(start, end),
+      timeRangeFilter: buildTimeRangeFilter(start, end),
     });
 
-    return (records as unknown as RawCalorieRecord[]).map((record) => ({
-      startTime: record.startTime,
-      endTime: record.endTime,
-      // L'Ã©nergie est retournÃ©e sous forme d'objet { inKilocalories: number }
-      kilocalories: record.energy?.inKilocalories ?? 0,
-    }));
+    return (records as unknown as RawCalorieRecord[]).map(mapCalorieRecord);
   } catch (err) {
     console.error('[VIVE/HealthConnect] Erreur queryActiveCalories :', err);
     throw err instanceof HealthConnectError

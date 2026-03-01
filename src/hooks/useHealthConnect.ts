@@ -10,7 +10,7 @@
  */
 
 import { useCallback } from 'react';
-import { Platform } from 'react-native';
+import { AppState, AppStateStatus, Platform } from 'react-native';
 import { useQuery, useQueryClient, UseQueryResult } from '@tanstack/react-query';
 import {
   initialize as initializeSDK,
@@ -142,6 +142,10 @@ interface ExerciseSessionRecord {
   metadata?: HealthConnectMetadata;
 }
 
+/**
+ * ReprÃ©sente un enregistrement HRV de type HeartRateVariabilityRmssd.
+ * Ref: https://developer.android.com/reference/kotlin/androidx/health/connect/client/records/HeartRateVariabilityRmssdRecord
+ */
 interface HRVRecord {
   time: string;
   heartRateVariabilityMillis: number;
@@ -210,6 +214,8 @@ function isHRVRecord(record: unknown): record is HRVRecord {
 const REQUIRED_PERMISSIONS: Permission[] = [
   { accessType: 'read', recordType: 'SleepSession' },
   { accessType: 'read', recordType: 'HeartRate' },
+  // Nom officiel du type HRV dans le SDK Health Connect Android
+  // Ref: https://developer.android.com/reference/kotlin/androidx/health/connect/client/records/HeartRateVariabilityRmssdRecord
   { accessType: 'read', recordType: 'HeartRateVariabilityRmssd' },
   { accessType: 'read', recordType: 'Steps' },
   { accessType: 'read', recordType: 'ActiveCaloriesBurned' },
@@ -246,6 +252,13 @@ function mapSleepStage(stage: number): SleepSampleData['value'] {
 }
 
 // ---------------------------------------------------------------------------
+// SDK Cache TTL
+// ---------------------------------------------------------------------------
+
+/** DurÃ©e de validitÃ© du cache de disponibilitÃ© SDK en millisecondes (5 minutes). */
+const SDK_AVAILABILITY_TTL_MS = 5 * 60 * 1000;
+
+// ---------------------------------------------------------------------------
 // SDK State Encapsulation
 // ---------------------------------------------------------------------------
 
@@ -255,31 +268,63 @@ function mapSleepStage(stage: number): SleepSampleData['value'] {
  */
 const sdkState = {
   available: null as boolean | null,
+  availableCheckedAt: null as number | null,
   initialized: false,
   initPromise: null as Promise<void> | null,
 
   /** RÃ©initialise l'Ã©tat complet du SDK (utile pour les tests et la gestion d'erreurs). */
   reset(): void {
     this.available = null;
+    this.availableCheckedAt = null;
     this.initialized = false;
     this.initPromise = null;
   },
+
+  /** Retourne true si le cache de disponibilitÃ© est encore valide. */
+  isCacheValid(): boolean {
+    if (this.available === null || this.availableCheckedAt === null) return false;
+    return Date.now() - this.availableCheckedAt < SDK_AVAILABILITY_TTL_MS;
+  },
 };
+
+// ---------------------------------------------------------------------------
+// AppState Listener â invalide le cache lors du retour au premier plan
+// ---------------------------------------------------------------------------
+
+if (Platform.OS === 'android') {
+  AppState.addEventListener('change', (nextState: AppStateStatus) => {
+    if (nextState === 'active') {
+      // Invalide le cache de disponibilitÃ© pour re-vÃ©rifier si Health Connect a Ã©tÃ© installÃ©
+      sdkState.available = null;
+      sdkState.availableCheckedAt = null;
+    }
+  });
+}
 
 // ---------------------------------------------------------------------------
 // SDK Availability Check
 // ---------------------------------------------------------------------------
 
+/**
+ * VÃ©rifie la disponibilitÃ© du SDK Health Connect.
+ * Utilise un cache avec TTL de 5 minutes, invalidÃ© Ã©galement lors du retour au premier plan.
+ */
 async function checkSdkAvailability(): Promise<boolean> {
   if (Platform.OS !== 'android') return false;
-  if (sdkState.available !== null) return sdkState.available;
+
+  // Utilise le cache si encore valide
+  if (sdkState.isCacheValid() && sdkState.available !== null) {
+    return sdkState.available;
+  }
 
   try {
     const status = await getSdkStatus();
     sdkState.available = status === SdkAvailabilityStatus.SDK_AVAILABLE;
+    sdkState.availableCheckedAt = Date.now();
     return sdkState.available;
   } catch {
     sdkState.available = false;
+    sdkState.availableCheckedAt = Date.now();
     return false;
   }
 }
@@ -511,6 +556,14 @@ async function fetchHeartRate(
   }
 }
 
+/**
+ * RÃ©cupÃ¨re les donnÃ©es HRV depuis Health Connect.
+ * Utilise 'HeartRateVariabilityRmssd' â nom officiel du type dans le SDK Health Connect Android.
+ * Ref: https://developer.android.com/reference/kotlin/androidx/health/connect/client/records/HeartRateVariabilityRmssdRecord
+ *
+ * IMPORTANT: Si lib/healthconnect.ts utilise un nom diffÃ©rent ('HeartRateVariability'),
+ * il faut unifier sur 'HeartRateVariabilityRmssd' qui est le nom correct selon la documentation.
+ */
 async function fetchHRV(
   startDate: Date,
   endDate: Date,
@@ -518,8 +571,6 @@ async function fetchHRV(
   await ensureInitialized();
 
   try {
-    // Utilisation de 'HeartRateVariabilityRmssd' â type officiel dans Health Connect SDK
-    // Ref: https://developer.android.com/reference/kotlin/androidx/health/connect/client/records/HeartRateVariabilityRmssdRecord
     const { records } = await readRecords('HeartRateVariabilityRmssd', {
       timeRangeFilter: {
         operator: 'between',
@@ -624,6 +675,26 @@ export function setupWorkManagerSync(
 }
 
 // ---------------------------------------------------------------------------
+// Retry Helper
+// ---------------------------------------------------------------------------
+
+function defaultRetry(failureCount: number, error: HealthConnectError): boolean {
+  if (
+    error.code === 'PERMISSION_DENIED' ||
+    error.code === 'PLATFORM_ERROR' ||
+    error.code === 'SDK_NOT_INSTALLED'
+  ) {
+    return false;
+  }
+  return failureCount < 2;
+}
+
+const DEFAULT_QUERY_OPTIONS = {
+  staleTime: 5 * 60 * 1000,
+  gcTime: 30 * 60 * 1000,
+} as const;
+
+// ---------------------------------------------------------------------------
 // React Query Hooks
 // ---------------------------------------------------------------------------
 
@@ -657,18 +728,8 @@ export function useSleepData(
       return fetchSleepSamples(startDate, endDate);
     },
     enabled: enabled && Platform.OS === 'android',
-    staleTime: 5 * 60 * 1000,
-    gcTime: 30 * 60 * 1000,
-    retry: (failureCount, error) => {
-      if (
-        error.code === 'PERMISSION_DENIED' ||
-        error.code === 'PLATFORM_ERROR' ||
-        error.code === 'SDK_NOT_INSTALLED'
-      ) {
-        return false;
-      }
-      return failureCount < 2;
-    },
+    ...DEFAULT_QUERY_OPTIONS,
+    retry: defaultRetry,
   });
 }
 
@@ -702,18 +763,8 @@ export function useHeartRate(
       return fetchHeartRate(startDate, endDate);
     },
     enabled: enabled && Platform.OS === 'android',
-    staleTime: 5 * 60 * 1000,
-    gcTime: 30 * 60 * 1000,
-    retry: (failureCount, error) => {
-      if (
-        error.code === 'PERMISSION_DENIED' ||
-        error.code === 'PLATFORM_ERROR' ||
-        error.code === 'SDK_NOT_INSTALLED'
-      ) {
-        return false;
-      }
-      return failureCount < 2;
-    },
+    ...DEFAULT_QUERY_OPTIONS,
+    retry: defaultRetry,
   });
 }
 
@@ -747,18 +798,8 @@ export function useHRV(
       return fetchHRV(startDate, endDate);
     },
     enabled: enabled && Platform.OS === 'android',
-    staleTime: 5 * 60 * 1000,
-    gcTime: 30 * 60 * 1000,
-    retry: (failureCount, error) => {
-      if (
-        error.code === 'PERMISSION_DENIED' ||
-        error.code === 'PLATFORM_ERROR' ||
-        error.code === 'SDK_NOT_INSTALLED'
-      ) {
-        return false;
-      }
-      return failureCount < 2;
-    },
+    ...DEFAULT_QUERY_OPTIONS,
+    retry: defaultRetry,
   });
 }
 
@@ -792,18 +833,8 @@ export function useActivityData(
       return fetchActivityData(startDate, endDate);
     },
     enabled: enabled && Platform.OS === 'android',
-    staleTime: 5 * 60 * 1000,
-    gcTime: 30 * 60 * 1000,
-    retry: (failureCount, error) => {
-      if (
-        error.code === 'PERMISSION_DENIED' ||
-        error.code === 'PLATFORM_ERROR' ||
-        error.code === 'SDK_NOT_INSTALLED'
-      ) {
-        return false;
-      }
-      return failureCount < 2;
-    },
+    ...DEFAULT_QUERY_OPTIONS,
+    retry: defaultRetry,
   });
 }
 
@@ -815,7 +846,7 @@ export function useHealthConnect() {
 
   /**
    * Initialise Health Connect et invalide toutes les queries existantes.
-   * RenommÃ© en 'initializeHealthConnect' pour Ã©viter le shadowing de l'import 'initialize'
+   * RenommÃ© en 'initializeHealthConnect' pour Ã©viter le shadowing de l'import 'initializeSDK'
    * du SDK react-native-health-connect.
    */
   const initializeHealthConnect = useCallback(async () => {

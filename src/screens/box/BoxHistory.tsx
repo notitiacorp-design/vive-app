@@ -19,12 +19,12 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
 
-// Enable LayoutAnimation on Android
+// Activer LayoutAnimation sur Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-// âââ Theme Colors âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// âââ ThÃ¨me / Couleurs ââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 const Colors = {
   background: '#080810',
@@ -44,9 +44,9 @@ const Colors = {
   border: '#1C1C28',
   activeBorder: '#3D8BFF33',
   notesBorder: '#3D8BFF22',
-};
+} as const;
 
-// âââ Types ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// âââ Types âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 type BoxStatus = 'delivered' | 'active' | 'completed' | 'pending';
 
@@ -77,7 +77,11 @@ interface SupabaseBoxRow {
   created_at: string;
 }
 
-// âââ Service / Mapping ââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// âââ Service / Mapping âââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+
+function isBoxStatus(value: string | null): value is BoxStatus {
+  return value === 'delivered' || value === 'active' || value === 'completed' || value === 'pending';
+}
 
 function mapBoxRow(row: SupabaseBoxRow): BoxItem {
   return {
@@ -85,7 +89,7 @@ function mapBoxRow(row: SupabaseBoxRow): BoxItem {
     month: new Date(row.validated_at).getMonth() + 1,
     year: new Date(row.validated_at).getFullYear(),
     name: row.box_name ?? 'VIVE Box',
-    status: (row.status as BoxStatus) ?? 'delivered',
+    status: isBoxStatus(row.status) ? row.status : 'delivered',
     hero_module: row.hero_module_name ?? 'Module hÃ©ros',
     products: row.products ?? [],
     notes: row.notes ?? undefined,
@@ -94,7 +98,7 @@ function mapBoxRow(row: SupabaseBoxRow): BoxItem {
   };
 }
 
-// âââ Supabase fetch âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// âââ Supabase fetch ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 async function fetchBoxHistory(): Promise<BoxItem[]> {
   const {
@@ -113,11 +117,11 @@ async function fetchBoxHistory(): Promise<BoxItem[]> {
 
   if (error) throw error;
 
-  return (data ?? []).map((row: SupabaseBoxRow) => mapBoxRow(row));
+  return (data as SupabaseBoxRow[] ?? []).map(mapBoxRow);
 }
 
-// âââ Demo/Mock data âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-// These are demonstration data only and are shown clearly as such
+// âââ DonnÃ©es de dÃ©monstration ââââââââââââââââââââââââââââââââââââââââââââââââ
+// Clairement identifiÃ©es comme fictives, affichÃ©es uniquement en mode dÃ©mo
 
 const DEMO_BOXES: BoxItem[] = [
   {
@@ -159,7 +163,7 @@ const DEMO_BOXES: BoxItem[] = [
 
 // âââ Helpers âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
-const MONTH_NAMES_FR = [
+const MONTH_NAMES_FR: readonly string[] = [
   'Janvier', 'FÃ©vrier', 'Mars', 'Avril', 'Mai', 'Juin',
   'Juillet', 'AoÃ»t', 'Septembre', 'Octobre', 'Novembre', 'DÃ©cembre',
 ];
@@ -168,24 +172,25 @@ function getMonthLabel(month: number, year: number): string {
   return `${MONTH_NAMES_FR[month - 1]} ${year}`;
 }
 
-const STATUS_CONFIG: Record<BoxStatus, { label: string; color: string; bg: string; icon: string }> = {
+type StatusConfig = Record<BoxStatus, { label: string; color: string; bg: string; icon: string }>;
+
+const STATUS_CONFIG: StatusConfig = {
   delivered: { label: 'LivrÃ©e', color: Colors.textSecondary, bg: Colors.surfaceElevated, icon: 'ð¦' },
-  active: { label: 'En cours', color: Colors.primary, bg: Colors.primaryDim, icon: 'â¡' },
+  active:    { label: 'En cours', color: Colors.primary, bg: Colors.primaryDim, icon: 'â¡' },
   completed: { label: 'ComplÃ©tÃ©e', color: Colors.success, bg: Colors.successDim, icon: 'â¦' },
-  pending: { label: 'En attente', color: Colors.warning, bg: Colors.warningDim, icon: 'â³' },
+  pending:   { label: 'En attente', color: Colors.warning, bg: Colors.warningDim, icon: 'â³' },
 };
 
-// âââ Sub-components âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// âââ Sous-composants âââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
-const StatusBadge = React.memo(function StatusBadge({ status }: { status: BoxStatus }) {
+interface StatusBadgeProps {
+  status: BoxStatus;
+}
+
+const StatusBadge = React.memo(function StatusBadge({ status }: StatusBadgeProps) {
   const config = STATUS_CONFIG[status];
   return (
-    <View
-      style={[
-        styles.statusBadge,
-        { backgroundColor: config.bg },
-      ]}
-    >
+    <View style={[styles.statusBadge, { backgroundColor: config.bg }]}>
       <Text style={styles.statusBadgeIcon}>{config.icon}</Text>
       <Text style={[styles.statusBadgeLabel, { color: config.color }]}>
         {config.label}
@@ -194,28 +199,27 @@ const StatusBadge = React.memo(function StatusBadge({ status }: { status: BoxSta
   );
 });
 
-const MissionProgress = React.memo(function MissionProgress({
-  completed,
-  total,
-}: {
+interface MissionProgressProps {
   completed: number;
   total: number;
-}) {
+}
+
+const MissionProgress = React.memo(function MissionProgress({ completed, total }: MissionProgressProps) {
   const progress = total > 0 ? completed / total : 0;
   const progressColor = progress === 1 ? Colors.success : Colors.primary;
+  const widthPercent = `${progress * 100}%` as const;
+
   return (
     <View style={styles.missionProgressContainer}>
       <View style={styles.missionProgressHeader}>
         <Text style={styles.missionLabel}>Missions</Text>
-        <Text style={styles.missionLabel}>
-          {completed}/{total}
-        </Text>
+        <Text style={styles.missionLabel}>{completed}/{total}</Text>
       </View>
       <View style={styles.missionProgressTrack}>
         <View
           style={[
             styles.missionProgressFill,
-            { width: `${progress * 100}%`, backgroundColor: progressColor },
+            { width: widthPercent, backgroundColor: progressColor },
           ]}
         />
       </View>
@@ -223,19 +227,26 @@ const MissionProgress = React.memo(function MissionProgress({
   );
 });
 
-const BoxCard = React.memo(function BoxCard({ item }: { item: BoxItem }) {
+interface BoxCardProps {
+  item: BoxItem;
+}
+
+const BoxCard = React.memo(function BoxCard({ item }: BoxCardProps) {
   const [expanded, setExpanded] = useState(false);
   const rotateAnim = React.useRef(new Animated.Value(0)).current;
 
   const toggleExpand = useCallback(() => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setExpanded((prev) => !prev);
-    Animated.timing(rotateAnim, {
-      toValue: expanded ? 0 : 1,
-      duration: 200,
-      useNativeDriver: true,
-    }).start();
-  }, [expanded, rotateAnim]);
+    setExpanded((prev) => {
+      const next = !prev;
+      Animated.timing(rotateAnim, {
+        toValue: next ? 1 : 0,
+        duration: 200,
+        useNativeDriver: true,
+      }).start();
+      return next;
+    });
+  }, [rotateAnim]);
 
   const chevronRotate = rotateAnim.interpolate({
     inputRange: [0, 1],
@@ -244,15 +255,10 @@ const BoxCard = React.memo(function BoxCard({ item }: { item: BoxItem }) {
 
   const statusConfig = STATUS_CONFIG[item.status];
   const isActive = item.status === 'active';
+  const cardBorderColor = isActive ? Colors.activeBorder : Colors.border;
 
   return (
-    <View
-      style={[
-        styles.boxCard,
-        { borderColor: isActive ? Colors.activeBorder : Colors.border },
-      ]}
-    >
-      {/* Active accent bar */}
+    <View style={[styles.boxCard, { borderColor: cardBorderColor }]}>
       {isActive && (
         <LinearGradient
           colors={[Colors.primary, Colors.primaryDeep]}
@@ -262,17 +268,14 @@ const BoxCard = React.memo(function BoxCard({ item }: { item: BoxItem }) {
         />
       )}
 
-      {/* Card header */}
       <Pressable
         onPress={toggleExpand}
-        style={({ pressed }) => [styles.cardPressable, { opacity: pressed ? 0.9 : 1 }]}
+        style={({ pressed }) => [styles.cardPressable, pressed && styles.cardPressablePressed]}
       >
         <View style={styles.cardHeaderRow}>
-          {/* Box icon */}
           <View style={styles.boxIconContainer}>
             <Text style={styles.boxIcon}>{statusConfig.icon}</Text>
           </View>
-          {/* Info */}
           <View style={styles.cardInfo}>
             <View style={styles.cardInfoTopRow}>
               <Text style={styles.monthLabel}>
@@ -283,7 +286,6 @@ const BoxCard = React.memo(function BoxCard({ item }: { item: BoxItem }) {
             <Text style={styles.boxName}>{item.name}</Text>
             <Text style={styles.heroModule}>â¦ {item.hero_module}</Text>
           </View>
-          {/* Chevron */}
           <Animated.View style={[styles.chevron, { transform: [{ rotate: chevronRotate }] }]}>
             <Text style={styles.chevronText}>â</Text>
           </Animated.View>
@@ -292,20 +294,15 @@ const BoxCard = React.memo(function BoxCard({ item }: { item: BoxItem }) {
         <MissionProgress completed={item.missions_completed} total={item.missions_total} />
       </Pressable>
 
-      {/* Expanded content */}
       {expanded && (
         <View style={styles.expandedContent}>
-          {/* Products list */}
           <Text style={styles.sectionTitle}>Contenu de la box</Text>
           {item.products.map((product, index) => (
             <View
               key={`${item.id}-product-${index}`}
               style={[
                 styles.productRow,
-                {
-                  borderBottomWidth: index < item.products.length - 1 ? 1 : 0,
-                  borderBottomColor: Colors.border,
-                },
+                index < item.products.length - 1 && styles.productRowBorder,
               ]}
             >
               <View style={styles.productDot} />
@@ -313,7 +310,6 @@ const BoxCard = React.memo(function BoxCard({ item }: { item: BoxItem }) {
             </View>
           ))}
 
-          {/* Notes */}
           {item.notes ? (
             <View style={styles.notesContainer}>
               <Text style={styles.notesTitle}>Mon retour</Text>
@@ -340,24 +336,26 @@ const EmptyState = React.memo(function EmptyState() {
   );
 });
 
-const ErrorState = React.memo(function ErrorState({ onRetry }: { onRetry: () => void }) {
+interface ErrorStateProps {
+  onRetry: () => void;
+}
+
+const ErrorState = React.memo(function ErrorState({ onRetry }: ErrorStateProps) {
   return (
     <View style={styles.errorState}>
       <Text style={styles.errorTitle}>Impossible de charger vos boxes</Text>
       <Text style={styles.errorSubtitle}>VÃ©rifiez votre connexion et rÃ©essayez.</Text>
       <Pressable
         onPress={onRetry}
-        style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}
+        style={({ pressed }) => [styles.retryButton, pressed && styles.retryButtonPressed]}
       >
-        <View style={styles.retryButton}>
-          <Text style={styles.retryButtonText}>RÃ©essayer</Text>
-        </View>
+        <Text style={styles.retryButtonText}>RÃ©essayer</Text>
       </Pressable>
     </View>
   );
 });
 
-// âââ Main Screen ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// âââ Ãcran principal ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 export default function BoxHistory() {
   const navigation = useNavigation();
@@ -365,13 +363,15 @@ export default function BoxHistory() {
   const { data, isLoading, isError, refetch, isFetching } = useQuery<BoxItem[], Error>({
     queryKey: ['box-history'],
     queryFn: fetchBoxHistory,
-    staleTime: 1000 * 60 * 2, // 2 min
+    staleTime: 1000 * 60 * 2,
   });
 
-  // Use real data or empty array; show demo data only explicitly if needed
-  const boxes = data ?? [];
+  // DonnÃ©es rÃ©elles ou tableau vide ; mode dÃ©mo uniquement si aucune donnÃ©e et pas d'erreur
   const isDemoMode = !data && !isLoading && !isError;
-  const displayBoxes = isDemoMode ? DEMO_BOXES : boxes;
+  const displayBoxes: BoxItem[] = useMemo(
+    () => (isDemoMode ? DEMO_BOXES : (data ?? [])),
+    [isDemoMode, data],
+  );
 
   const stats = useMemo(
     () => ({
@@ -379,7 +379,7 @@ export default function BoxHistory() {
       active: displayBoxes.filter((b) => b.status === 'active').length,
       missionsCompleted: displayBoxes.reduce((acc, b) => acc + b.missions_completed, 0),
     }),
-    [displayBoxes]
+    [displayBoxes],
   );
 
   const boxCountLabel = useMemo(() => {
@@ -393,10 +393,19 @@ export default function BoxHistory() {
 
   const renderItem = useCallback(
     ({ item }: { item: BoxItem }) => <BoxCard item={item} />,
-    []
+    [],
   );
 
   const keyExtractor = useCallback((item: BoxItem) => item.id, []);
+
+  const statRows: Array<{ label: string; value: number; color: string }> = useMemo(
+    () => [
+      { label: 'ComplÃ©tÃ©es', value: stats.completed, color: Colors.success },
+      { label: 'En cours',   value: stats.active,    color: Colors.primary },
+      { label: 'Missions â¦', value: stats.missionsCompleted, color: Colors.textPrimary },
+    ],
+    [stats],
+  );
 
   const listHeader = useMemo(() => {
     if (displayBoxes.length === 0) return null;
@@ -405,11 +414,7 @@ export default function BoxHistory() {
         {isDemoMode && (
           <Text style={styles.demoBanner}>â ï¸ Mode dÃ©monstration â donnÃ©es fictives</Text>
         )}
-        {[
-          { label: 'ComplÃ©tÃ©es', value: stats.completed, color: Colors.success },
-          { label: 'En cours', value: stats.active, color: Colors.primary },
-          { label: 'Missions â', value: stats.missionsCompleted, color: Colors.textPrimary },
-        ].map((stat) => (
+        {statRows.map((stat) => (
           <View key={stat.label} style={styles.statItem}>
             <Text style={[styles.statValue, { color: stat.color }]}>{stat.value}</Text>
             <Text style={styles.statLabel}>{stat.label}</Text>
@@ -417,25 +422,23 @@ export default function BoxHistory() {
         ))}
       </View>
     );
-  }, [displayBoxes.length, stats, isDemoMode]);
+  }, [displayBoxes.length, statRows, isDemoMode]);
+
+  const isRefreshing = isFetching && !isLoading;
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.background} />
       <SafeAreaView style={styles.flex1} edges={['top']}>
-        {/* Header */}
+        {/* En-tÃªte */}
         <View style={styles.header}>
-          <Pressable
-            onPress={() => navigation.goBack()}
-            style={styles.backButton}
-          >
+          <Pressable onPress={() => navigation.goBack()} style={styles.backButton}>
             <Text style={styles.backButtonText}>â</Text>
           </Pressable>
           <View style={styles.flex1}>
             <Text style={styles.headerTitle}>Historique des boxes</Text>
             <Text style={styles.headerSubtitle}>{boxCountLabel}</Text>
           </View>
-          {/* Stats badge */}
           {displayBoxes.length > 0 && (
             <View style={styles.countBadge}>
               <Text style={styles.countBadgeValue}>{displayBoxes.length}</Text>
@@ -444,7 +447,7 @@ export default function BoxHistory() {
           )}
         </View>
 
-        {/* Loading */}
+        {/* Chargement */}
         {isLoading && (
           <View style={styles.centered}>
             <ActivityIndicator color={Colors.primary} size="large" />
@@ -452,10 +455,10 @@ export default function BoxHistory() {
           </View>
         )}
 
-        {/* Error */}
+        {/* Erreur */}
         {isError && !isLoading && <ErrorState onRetry={handleRefresh} />}
 
-        {/* List */}
+        {/* Liste */}
         {!isLoading && (
           <FlatList<BoxItem>
             data={displayBoxes}
@@ -466,7 +469,7 @@ export default function BoxHistory() {
             showsVerticalScrollIndicator={false}
             refreshControl={
               <RefreshControl
-                refreshing={isFetching && !isLoading}
+                refreshing={isRefreshing}
                 onRefresh={handleRefresh}
                 tintColor={Colors.primary}
                 colors={[Colors.primary]}
@@ -560,6 +563,7 @@ const styles = StyleSheet.create({
     gap: 12,
     borderWidth: 1,
     borderColor: Colors.border,
+    flexWrap: 'wrap',
   },
   demoBanner: {
     color: Colors.warning,
@@ -595,6 +599,9 @@ const styles = StyleSheet.create({
   },
   cardPressable: {
     padding: 16,
+  },
+  cardPressablePressed: {
+    opacity: 0.9,
   },
   cardHeaderRow: {
     flexDirection: 'row',
@@ -668,6 +675,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 8,
     gap: 10,
+  },
+  productRowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
   },
   productDot: {
     width: 6,
@@ -804,6 +815,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 20,
     paddingVertical: 10,
+  },
+  retryButtonPressed: {
+    opacity: 0.8,
   },
   retryButtonText: {
     color: Colors.white,

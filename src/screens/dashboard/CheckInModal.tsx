@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect, memo } from 'react';
 import {
   Modal,
   View,
@@ -8,12 +8,49 @@ import {
   ScrollView,
   Animated,
   PanResponder,
-  Dimensions,
   Platform,
+  StyleSheet,
+  useWindowDimensions,
 } from 'react-native';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+// âââ ThÃ¨me âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+const Theme = {
+  colors: {
+    background: 'rgba(8,8,16,0.85)',
+    surface: '#111118',
+    surfaceAlt: '#0D0D16',
+    border: '#1C1C28',
+    borderAlt: '#2A2A3C',
+    textPrimary: '#E8E8F0',
+    textSecondary: '#A8A8C0',
+    white: '#FFFFFF',
+    accent: '#3D8BFF',
+    accentDisabled: '#2A3A5C',
+    trackBg: '#1C1C28',
+    thumbInner: 'rgba(255,255,255,0.6)',
+    thumbBorder: 'rgba(255,255,255,0.2)',
+    sliderEnergy: '#FBBF24',
+    sliderSleep: '#3D8BFF',
+    sliderStress: '#F87171',
+  },
+  radii: {
+    sm: 4,
+    md: 10,
+    lg: 16,
+    xl: 18,
+    xxl: 28,
+  },
+  spacing: {
+    xs: 4,
+    sm: 8,
+    md: 12,
+    lg: 16,
+    xl: 24,
+    xxl: 28,
+  },
+};
 
+// âââ Types ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 type CheckInValues = {
   energy: number;
   sleep: number;
@@ -23,7 +60,8 @@ type CheckInValues = {
 type CheckInModalProps = {
   visible: boolean;
   onClose: () => void;
-  onSubmit: (values: CheckInValues) => void;
+  // Issue 2 : onSubmit peut retourner Promise<void>
+  onSubmit: (values: CheckInValues) => void | Promise<void>;
 };
 
 type SliderConfig = {
@@ -38,59 +76,70 @@ type SliderConfig = {
 const SLIDERS: SliderConfig[] = [
   {
     key: 'energy',
-    label: 'Énergie',
-    emoji: '⚡',
-    lowLabel: 'Épuisé',
-    highLabel: 'Plein d\'énergie',
-    color: '#FBBF24',
+    label: 'Ãnergie',
+    emoji: 'â¡',
+    lowLabel: 'ÃpuisÃ©',
+    highLabel: "Plein d'Ã©nergie",
+    color: Theme.colors.sliderEnergy,
   },
   {
     key: 'sleep',
-    label: 'Qualité du sommeil',
-    emoji: '🌙',
+    label: 'QualitÃ© du sommeil',
+    emoji: 'ð',
     lowLabel: 'Mauvais',
     highLabel: 'Excellent',
-    color: '#3D8BFF',
+    color: Theme.colors.sliderSleep,
   },
   {
     key: 'stress',
     label: 'Niveau de stress',
-    emoji: '🌊',
+    emoji: 'ð',
     lowLabel: 'Zen',
-    highLabel: 'Très stressé',
-    color: '#F87171',
+    highLabel: 'TrÃ¨s stressÃ©',
+    color: Theme.colors.sliderStress,
   },
 ];
 
-const SLIDER_TRACK_WIDTH = SCREEN_WIDTH - 48 - 48;
-
+// âââ CustomSlider âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 type CustomSliderProps = {
   value: number;
   onChange: (value: number) => void;
   color: string;
   min?: number;
   max?: number;
+  trackWidth: number;
 };
 
-const CustomSlider: React.FC<CustomSliderProps> = ({
-  value,
-  onChange,
-  color,
-  min = 1,
-  max = 10,
-}) => {
-  const trackWidth = SLIDER_TRACK_WIDTH;
-  const thumbSize = 26;
-  const trackHeight = 6;
+const THUMB_SIZE = 26;
+const TRACK_HEIGHT = 6;
+const SLIDER_H_PADDING = 48;
 
-  const progress = (value - min) / (max - min);
-  const thumbPosition = progress * (trackWidth - thumbSize);
-
-  const panX = useRef(new Animated.Value(thumbPosition)).current;
-  const lastX = useRef(thumbPosition);
-
-  const clamp = (val: number, lo: number, hi: number) =>
+const CustomSlider: React.FC<CustomSliderProps> = memo((
+  { value, onChange, color, min = 1, max = 10, trackWidth },
+) => {
+  const clamp = (val: number, lo: number, hi: number): number =>
     Math.min(Math.max(val, lo), hi);
+
+  const computeThumbPos = (v: number): number =>
+    ((v - min) / (max - min)) * (trackWidth - THUMB_SIZE);
+
+  const initialPos = computeThumbPos(value);
+  const panX = useRef(new Animated.Value(initialPos)).current;
+  const lastX = useRef(initialPos);
+
+  // Issue 6 : ref pour Ã©viter closure pÃ©rimÃ©e sur onChange
+  const onChangeRef = useRef(onChange);
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
+
+  // Issues 1 & 3 : synchroniser panX et lastX quand value change de l'extÃ©rieur
+  useEffect(() => {
+    const externalPos = computeThumbPos(value);
+    panX.setValue(externalPos);
+    lastX.current = externalPos;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value, min, max, trackWidth]);
 
   const panResponder = useRef(
     PanResponder.create({
@@ -100,399 +149,484 @@ const CustomSlider: React.FC<CustomSliderProps> = ({
         panX.extractOffset();
       },
       onPanResponderMove: (_, gestureState) => {
-        const newX = clamp(gestureState.dx, -lastX.current, trackWidth - thumbSize - lastX.current);
+        const newX = clamp(
+          gestureState.dx,
+          -lastX.current,
+          trackWidth - THUMB_SIZE - lastX.current,
+        );
         panX.setValue(newX);
-        const rawPosition = clamp(lastX.current + gestureState.dx, 0, trackWidth - thumbSize);
-        const rawProgress = rawPosition / (trackWidth - thumbSize);
+        const rawPosition = clamp(
+          lastX.current + gestureState.dx,
+          0,
+          trackWidth - THUMB_SIZE,
+        );
+        const rawProgress = rawPosition / (trackWidth - THUMB_SIZE);
         const newValue = Math.round(rawProgress * (max - min) + min);
-        onChange(clamp(newValue, min, max));
+        // Issue 6 : appel via ref
+        onChangeRef.current(clamp(newValue, min, max));
       },
       onPanResponderRelease: (_, gestureState) => {
         panX.flattenOffset();
-        const rawPosition = clamp(lastX.current + gestureState.dx, 0, trackWidth - thumbSize);
-        lastX.current = rawPosition;
-        const rawProgress = rawPosition / (trackWidth - thumbSize);
+        const rawPosition = clamp(
+          lastX.current + gestureState.dx,
+          0,
+          trackWidth - THUMB_SIZE,
+        );
+        const rawProgress = rawPosition / (trackWidth - THUMB_SIZE);
         const newValue = Math.round(rawProgress * (max - min) + min);
         const finalValue = clamp(newValue, min, max);
-        onChange(finalValue);
-        const snappedPosition = ((finalValue - min) / (max - min)) * (trackWidth - thumbSize);
+        // Issue 6 : appel via ref
+        onChangeRef.current(finalValue);
+        const snappedPosition = ((finalValue - min) / (max - min)) * (trackWidth - THUMB_SIZE);
         lastX.current = snappedPosition;
         panX.setValue(snappedPosition);
       },
-    })
+    }),
   ).current;
 
-  // Sync external value changes to position
-  const externalProgress = (value - min) / (max - min);
-  const externalThumbPos = externalProgress * (trackWidth - thumbSize);
-
-  const fillWidth = externalThumbPos + thumbSize / 2;
+  const externalThumbPos = computeThumbPos(value);
+  const fillWidth = externalThumbPos + THUMB_SIZE / 2;
 
   return (
-    <View
-      style={{
-        height: 44,
-        justifyContent: 'center',
-        paddingHorizontal: 0,
-      }}
-    >
-      {/* Track background */}
+    <View style={sliderStyles.container}>
+      {/* Track arriÃ¨re-plan */}
       <View
-        style={{
-          position: 'absolute',
-          left: 0,
-          right: 0,
-          height: trackHeight,
-          backgroundColor: '#1C1C28',
-          borderRadius: trackHeight / 2,
-        }}
+        style={[
+          sliderStyles.track,
+          { backgroundColor: Theme.colors.trackBg },
+        ]}
       />
 
       {/* Fill */}
       <View
-        style={{
-          position: 'absolute',
-          left: 0,
-          width: fillWidth,
-          height: trackHeight,
-          backgroundColor: color,
-          borderRadius: trackHeight / 2,
-          opacity: 0.9,
-        }}
+        style={[
+          sliderStyles.fill,
+          { width: fillWidth, backgroundColor: color },
+        ]}
       />
 
       {/* Thumb */}
       <Animated.View
         {...panResponder.panHandlers}
         style={[
+          sliderStyles.thumb,
           {
-            position: 'absolute',
-            width: thumbSize,
-            height: thumbSize,
-            borderRadius: thumbSize / 2,
+            left: externalThumbPos,
             backgroundColor: color,
             shadowColor: color,
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.5,
-            shadowRadius: 8,
-            elevation: 6,
-            left: externalThumbPos,
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderWidth: 2,
-            borderColor: 'rgba(255,255,255,0.2)',
+            borderColor: Theme.colors.thumbBorder,
           },
         ]}
       >
-        <View
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius: 4,
-            backgroundColor: 'rgba(255,255,255,0.6)',
-          }}
-        />
+        <View style={sliderStyles.thumbInner} />
       </Animated.View>
     </View>
   );
-};
+});
 
-const CheckInModal: React.FC<CheckInModalProps> = ({ visible, onClose, onSubmit }) => {
-  const [values, setValues] = useState<CheckInValues>({
-    energy: 5,
-    sleep: 5,
-    stress: 5,
-  });
-  const [isSubmitting, setIsSubmitting] = useState(false);
+CustomSlider.displayName = 'CustomSlider';
 
-  const handleChange = useCallback(
-    (key: keyof CheckInValues) => (value: number) => {
-      setValues((prev) => ({ ...prev, [key]: value }));
-    },
-    []
-  );
+// âââ CheckInModal âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+const CheckInModal: React.FC<CheckInModalProps> = memo(
+  ({ visible, onClose, onSubmit }) => {
+    // Issue 7 : dimensions rÃ©actives via hook
+    const { width: screenWidth } = useWindowDimensions();
+    const trackWidth = screenWidth - SLIDER_H_PADDING * 2;
 
-  const handleSubmit = useCallback(async () => {
-    setIsSubmitting(true);
-    try {
-      await onSubmit(values);
-    } finally {
-      setIsSubmitting(false);
-    }
-  }, [values, onSubmit]);
+    const [values, setValues] = useState<CheckInValues>({
+      energy: 5,
+      sleep: 5,
+      stress: 5,
+    });
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleClose = useCallback(() => {
-    setValues({ energy: 5, sleep: 5, stress: 5 });
-    onClose();
-  }, [onClose]);
+    const handleChange = useCallback(
+      (key: keyof CheckInValues) =>
+        (value: number) => {
+          setValues((prev) => ({ ...prev, [key]: value }));
+        },
+      [],
+    );
 
-  function getEmojiForValue(value: number, key: keyof CheckInValues): string {
-    if (key === 'stress') {
-      if (value <= 3) return '😌';
-      if (value <= 6) return '😐';
-      return '😰';
-    }
-    if (value <= 3) return '😴';
-    if (value <= 6) return '😐';
-    return '😄';
-  }
+    const handleSubmit = useCallback(async () => {
+      setIsSubmitting(true);
+      try {
+        await onSubmit(values);
+      } finally {
+        setIsSubmitting(false);
+      }
+    }, [values, onSubmit]);
 
-  return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      statusBarTranslucent
-      onRequestClose={handleClose}
-    >
-      <TouchableWithoutFeedback onPress={handleClose}>
-        <View
-          style={{
-            flex: 1,
-            backgroundColor: 'rgba(8,8,16,0.85)',
-            justifyContent: 'flex-end',
-          }}
-        >
-          <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
-            <View
-              style={{
-                backgroundColor: '#111118',
-                borderTopLeftRadius: 28,
-                borderTopRightRadius: 28,
-                paddingBottom: Platform.OS === 'ios' ? 40 : 28,
-                borderTopWidth: 1,
-                borderLeftWidth: 1,
-                borderRightWidth: 1,
-                borderColor: '#1C1C28',
-                overflow: 'hidden',
-              }}
-            >
-              {/* Handle bar */}
-              <View style={{ alignItems: 'center', paddingTop: 12, paddingBottom: 4 }}>
-                <View
-                  style={{
-                    width: 40,
-                    height: 4,
-                    borderRadius: 2,
-                    backgroundColor: '#2A2A3C',
-                  }}
-                />
-              </View>
+    const handleClose = useCallback(() => {
+      setValues({ energy: 5, sleep: 5, stress: 5 });
+      onClose();
+    }, [onClose]);
 
-              <ScrollView
-                style={{ maxHeight: 560 }}
-                contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 8 }}
-                showsVerticalScrollIndicator={false}
-                scrollEnabled={false}
+    const getEmojiForValue = useCallback(
+      (value: number, key: keyof CheckInValues): string => {
+        if (key === 'stress') {
+          if (value <= 3) return 'ð';
+          if (value <= 6) return 'ð';
+          return 'ð°';
+        }
+        if (value <= 3) return 'ð´';
+        if (value <= 6) return 'ð';
+        return 'ð';
+      },
+      [],
+    );
+
+    return (
+      <Modal
+        visible={visible}
+        transparent
+        animationType="slide"
+        statusBarTranslucent
+        onRequestClose={handleClose}
+      >
+        <TouchableWithoutFeedback onPress={handleClose}>
+          <View style={modalStyles.overlay}>
+            <TouchableWithoutFeedback>
+              <View
+                style={[
+                  modalStyles.sheet,
+                  {
+                    paddingBottom:
+                      Platform.OS === 'ios' ? 40 : Theme.spacing.xxl,
+                  },
+                ]}
               >
-                {/* Header */}
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    marginBottom: 28,
-                  }}
-                >
-                  <View>
-                    <Text
-                      style={{
-                        color: '#E8E8F0',
-                        fontSize: 22,
-                        fontWeight: '700',
-                        letterSpacing: -0.5,
-                      }}
-                    >
-                      Check-in rapide
-                    </Text>
-                    <Text
-                      style={{
-                        color: '#A8A8C0',
-                        fontSize: 13,
-                        marginTop: 4,
-                      }}
-                    >
-                      Comment vous sentez-vous ?
-                    </Text>
-                  </View>
-
-                  <TouchableOpacity
-                    onPress={handleClose}
-                    style={{
-                      width: 36,
-                      height: 36,
-                      borderRadius: 18,
-                      backgroundColor: '#1C1C28',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      borderWidth: 1,
-                      borderColor: '#2A2A3C',
-                    }}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  >
-                    <Text style={{ color: '#A8A8C0', fontSize: 16, lineHeight: 18 }}>✕</Text>
-                  </TouchableOpacity>
+                {/* Handle bar */}
+                <View style={modalStyles.handleContainer}>
+                  <View style={modalStyles.handle} />
                 </View>
 
-                {/* Sliders */}
-                {SLIDERS.map((slider) => {
-                  const currentValue = values[slider.key];
-                  return (
-                    <View
-                      key={slider.key}
-                      style={{
-                        marginBottom: 28,
-                        backgroundColor: '#0D0D16',
-                        borderRadius: 16,
-                        padding: 16,
-                        borderWidth: 1,
-                        borderColor: '#1C1C28',
-                      }}
-                    >
-                      {/* Slider header */}
-                      <View
-                        style={{
-                          flexDirection: 'row',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          marginBottom: 16,
-                        }}
-                      >
-                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                          <Text style={{ fontSize: 20, marginRight: 10 }}>{slider.emoji}</Text>
-                          <Text
-                            style={{
-                              color: '#E8E8F0',
-                              fontSize: 15,
-                              fontWeight: '600',
-                            }}
-                          >
-                            {slider.label}
-                          </Text>
-                        </View>
-
-                        <View
-                          style={{
-                            flexDirection: 'row',
-                            alignItems: 'center',
-                            backgroundColor: `${slider.color}1A`,
-                            borderRadius: 10,
-                            paddingHorizontal: 10,
-                            paddingVertical: 4,
-                            borderWidth: 1,
-                            borderColor: `${slider.color}33`,
-                          }}
-                        >
-                          <Text
-                            style={{
-                              fontSize: 14,
-                              marginRight: 4,
-                            }}
-                          >
-                            {getEmojiForValue(currentValue, slider.key)}
-                          </Text>
-                          <Text
-                            style={{
-                              color: slider.color,
-                              fontSize: 16,
-                              fontWeight: '700',
-                            }}
-                          >
-                            {currentValue}
-                          </Text>
-                          <Text
-                            style={{
-                              color: slider.color,
-                              fontSize: 10,
-                              fontWeight: '500',
-                              opacity: 0.7,
-                              marginLeft: 1,
-                            }}
-                          >
-                            /10
-                          </Text>
-                        </View>
-                      </View>
-
-                      {/* Custom Slider */}
-                      <CustomSlider
-                        value={currentValue}
-                        onChange={handleChange(slider.key)}
-                        color={slider.color}
-                        min={1}
-                        max={10}
-                      />
-
-                      {/* Labels */}
-                      <View
-                        style={{
-                          flexDirection: 'row',
-                          justifyContent: 'space-between',
-                          marginTop: 8,
-                        }}
-                      >
-                        <Text style={{ color: '#A8A8C0', fontSize: 11 }}>
-                          {slider.lowLabel}
-                        </Text>
-                        <Text style={{ color: '#A8A8C0', fontSize: 11 }}>
-                          {slider.highLabel}
-                        </Text>
-                      </View>
-                    </View>
-                  );
-                })}
-
-                {/* Submit Button */}
-                <TouchableOpacity
-                  onPress={handleSubmit}
-                  disabled={isSubmitting}
-                  style={{
-                    backgroundColor: isSubmitting ? '#2A3A5C' : '#3D8BFF',
-                    borderRadius: 16,
-                    paddingVertical: 18,
-                    alignItems: 'center',
-                    marginTop: 4,
-                    shadowColor: '#3D8BFF',
-                    shadowOffset: { width: 0, height: 6 },
-                    shadowOpacity: isSubmitting ? 0 : 0.35,
-                    shadowRadius: 16,
-                    elevation: isSubmitting ? 0 : 8,
-                  }}
-                  activeOpacity={0.85}
+                {/* Issue 5 : ScrollView sans scrollEnabled={false} pour petit Ã©cran */}
+                <ScrollView
+                  style={modalStyles.scroll}
+                  contentContainerStyle={modalStyles.scrollContent}
+                  showsVerticalScrollIndicator={false}
                 >
-                  {isSubmitting ? (
-                    <Text
-                      style={{
-                        color: '#A8A8C0',
-                        fontSize: 16,
-                        fontWeight: '600',
-                      }}
-                    >
-                      Envoi en cours...
-                    </Text>
-                  ) : (
-                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                      <Text style={{ fontSize: 16, marginRight: 8 }}>🚀</Text>
-                      <Text
-                        style={{
-                          color: '#FFFFFF',
-                          fontSize: 16,
-                          fontWeight: '700',
-                          letterSpacing: 0.3,
-                        }}
-                      >
-                        Valider le check-in
+                  {/* Header */}
+                  <View style={modalStyles.header}>
+                    <View>
+                      <Text style={modalStyles.title}>Check-in rapide</Text>
+                      <Text style={modalStyles.subtitle}>
+                        Comment vous sentez-vous ?
                       </Text>
                     </View>
-                  )}
-                </TouchableOpacity>
-              </ScrollView>
-            </View>
-          </TouchableWithoutFeedback>
-        </View>
-      </TouchableWithoutFeedback>
-    </Modal>
-  );
-};
+
+                    <TouchableOpacity
+                      onPress={handleClose}
+                      style={modalStyles.closeBtn}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Text style={modalStyles.closeBtnText}>â</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Sliders */}
+                  {SLIDERS.map((slider) => {
+                    const currentValue = values[slider.key];
+                    return (
+                      <View key={slider.key} style={modalStyles.sliderCard}>
+                        {/* En-tÃªte slider */}
+                        <View style={modalStyles.sliderHeader}>
+                          <View style={modalStyles.sliderLabelRow}>
+                            <Text style={modalStyles.sliderEmoji}>
+                              {slider.emoji}
+                            </Text>
+                            <Text style={modalStyles.sliderLabel}>
+                              {slider.label}
+                            </Text>
+                          </View>
+
+                          <View
+                            style={[
+                              modalStyles.valueBadge,
+                              {
+                                backgroundColor: `${slider.color}1A`,
+                                borderColor: `${slider.color}33`,
+                              },
+                            ]}
+                          >
+                            <Text style={modalStyles.valueBadgeEmoji}>
+                              {getEmojiForValue(currentValue, slider.key)}
+                            </Text>
+                            <Text
+                              style={[
+                                modalStyles.valueBadgeNumber,
+                                { color: slider.color },
+                              ]}
+                            >
+                              {currentValue}
+                            </Text>
+                            <Text
+                              style={[
+                                modalStyles.valueBadgeSuffix,
+                                { color: slider.color },
+                              ]}
+                            >
+                              /10
+                            </Text>
+                          </View>
+                        </View>
+
+                        <CustomSlider
+                          value={currentValue}
+                          onChange={handleChange(slider.key)}
+                          color={slider.color}
+                          min={1}
+                          max={10}
+                          trackWidth={trackWidth}
+                        />
+
+                        <View style={modalStyles.sliderFooter}>
+                          <Text style={modalStyles.sliderFooterText}>
+                            {slider.lowLabel}
+                          </Text>
+                          <Text style={modalStyles.sliderFooterText}>
+                            {slider.highLabel}
+                          </Text>
+                        </View>
+                      </View>
+                    );
+                  })}
+
+                  {/* Bouton soumettre */}
+                  <TouchableOpacity
+                    onPress={handleSubmit}
+                    disabled={isSubmitting}
+                    style={[
+                      modalStyles.submitBtn,
+                      {
+                        backgroundColor: isSubmitting
+                          ? Theme.colors.accentDisabled
+                          : Theme.colors.accent,
+                        shadowOpacity: isSubmitting ? 0 : 0.35,
+                        elevation: isSubmitting ? 0 : 8,
+                      },
+                    ]}
+                    activeOpacity={0.85}
+                  >
+                    {isSubmitting ? (
+                      <Text style={modalStyles.submitBtnTextDisabled}>
+                        Envoi en cours...
+                      </Text>
+                    ) : (
+                      <View style={modalStyles.submitBtnContent}>
+                        <Text style={modalStyles.submitBtnEmoji}>ð</Text>
+                        <Text style={modalStyles.submitBtnText}>
+                          Valider le check-in
+                        </Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                </ScrollView>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+    );
+  },
+);
+
+CheckInModal.displayName = 'CheckInModal';
+
+// âââ StyleSheet âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+const sliderStyles = StyleSheet.create({
+  container: {
+    height: 44,
+    justifyContent: 'center',
+  },
+  track: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: TRACK_HEIGHT,
+    borderRadius: TRACK_HEIGHT / 2,
+  },
+  fill: {
+    position: 'absolute',
+    left: 0,
+    height: TRACK_HEIGHT,
+    borderRadius: TRACK_HEIGHT / 2,
+    opacity: 0.9,
+  },
+  thumb: {
+    position: 'absolute',
+    width: THUMB_SIZE,
+    height: THUMB_SIZE,
+    borderRadius: THUMB_SIZE / 2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+  },
+  thumbInner: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Theme.colors.thumbInner,
+  },
+});
+
+const modalStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: Theme.colors.background,
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    backgroundColor: Theme.colors.surface,
+    borderTopLeftRadius: Theme.radii.xxl,
+    borderTopRightRadius: Theme.radii.xxl,
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: Theme.colors.border,
+    overflow: 'hidden',
+  },
+  handleContainer: {
+    alignItems: 'center',
+    paddingTop: Theme.spacing.md,
+    paddingBottom: Theme.spacing.xs,
+  },
+  handle: {
+    width: 40,
+    height: 4,
+    borderRadius: Theme.radii.sm / 2,
+    backgroundColor: Theme.colors.borderAlt,
+  },
+  scroll: {
+    maxHeight: 560,
+  },
+  scrollContent: {
+    paddingHorizontal: Theme.spacing.xl,
+    paddingTop: Theme.spacing.sm,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Theme.spacing.xxl,
+  },
+  title: {
+    color: Theme.colors.textPrimary,
+    fontSize: 22,
+    fontWeight: '700',
+    letterSpacing: -0.5,
+  },
+  subtitle: {
+    color: Theme.colors.textSecondary,
+    fontSize: 13,
+    marginTop: Theme.spacing.xs,
+  },
+  closeBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: Theme.radii.xl,
+    backgroundColor: Theme.colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Theme.colors.borderAlt,
+  },
+  closeBtnText: {
+    color: Theme.colors.textSecondary,
+    fontSize: 16,
+    lineHeight: 18,
+  },
+  sliderCard: {
+    marginBottom: Theme.spacing.xxl,
+    backgroundColor: Theme.colors.surfaceAlt,
+    borderRadius: Theme.radii.lg,
+    padding: Theme.spacing.lg,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
+  },
+  sliderHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Theme.spacing.lg,
+  },
+  sliderLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  sliderEmoji: {
+    fontSize: 20,
+    marginRight: 10,
+  },
+  sliderLabel: {
+    color: Theme.colors.textPrimary,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  valueBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: Theme.radii.md,
+    paddingHorizontal: 10,
+    paddingVertical: Theme.spacing.xs,
+    borderWidth: 1,
+  },
+  valueBadgeEmoji: {
+    fontSize: 14,
+    marginRight: Theme.spacing.xs,
+  },
+  valueBadgeNumber: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  valueBadgeSuffix: {
+    fontSize: 10,
+    fontWeight: '500',
+    opacity: 0.7,
+    marginLeft: 1,
+  },
+  sliderFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: Theme.spacing.sm,
+  },
+  sliderFooterText: {
+    color: Theme.colors.textSecondary,
+    fontSize: 11,
+  },
+  submitBtn: {
+    borderRadius: Theme.radii.lg,
+    paddingVertical: 18,
+    alignItems: 'center',
+    marginTop: Theme.spacing.xs,
+    shadowColor: Theme.colors.accent,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 16,
+  },
+  submitBtnContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  submitBtnEmoji: {
+    fontSize: 16,
+    marginRight: Theme.spacing.sm,
+  },
+  submitBtnText: {
+    color: Theme.colors.white,
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  submitBtnTextDisabled: {
+    color: Theme.colors.textSecondary,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+});
 
 export default CheckInModal;

@@ -1,9 +1,9 @@
 /**
  * src/lib/revenuecat.ts
- * VIVE App â RevenueCat configuration & helpers
+ * VIVE App â RevenueCat configuration & helpers
  *
- * Call configureRevenueCat() once, as early as possible in the app lifecycle
- * (e.g. inside App.tsx before rendering any screens).
+ * Appeler configureRevenueCat() une seule fois, le plus tÃ´t possible dans
+ * le cycle de vie de l'application (ex : dans App.tsx avant le rendu des Ã©crans).
  */
 
 import { Platform } from 'react-native';
@@ -13,16 +13,16 @@ import Purchases, {
 } from 'react-native-purchases';
 
 // ---------------------------------------------------------------------------
-// Environment variables â utilisation exclusive de process.env.EXPO_PUBLIC_*
+// Variables d'environnement â utilisation exclusive de process.env.EXPO_PUBLIC_*
 // ---------------------------------------------------------------------------
 const RC_IOS_API_KEY: string = process.env.EXPO_PUBLIC_REVENUECAT_IOS_KEY ?? '';
 const RC_ANDROID_API_KEY: string = process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY ?? '';
 
 // ---------------------------------------------------------------------------
-// Constants exported for use across the app
+// Constantes exportÃ©es pour l'ensemble de l'application
 // ---------------------------------------------------------------------------
 
-/** Identifiants d'entitlement RevenueCat (doivent correspondre au dashboard RC). */
+/** Identifiants d'entitlement RevenueCat (doivent correspondre au tableau de bord RC). */
 export const ENTITLEMENTS = {
   /** AccÃ¨s aux fonctionnalitÃ©s premium : mÃ©triques avancÃ©es, tendances, coach IA. */
   PREMIUM: 'premium',
@@ -32,7 +32,7 @@ export const ENTITLEMENTS = {
 
 export type EntitlementId = (typeof ENTITLEMENTS)[keyof typeof ENTITLEMENTS];
 
-/** Identifiants d'offres RevenueCat (doivent correspondre au dashboard RC). */
+/** Identifiants d'offres RevenueCat (doivent correspondre au tableau de bord RC). */
 export const OFFERINGS = {
   DEFAULT: 'default',
   PREMIUM_MONTHLY: 'premium_monthly',
@@ -43,13 +43,29 @@ export const OFFERINGS = {
 
 export type OfferingId = (typeof OFFERINGS)[keyof typeof OFFERINGS];
 
-/** Identifiants de produits â correspond aux IDs App Store / Play Store. */
+/** Identifiants de produits â correspondent aux IDs App Store / Play Store. */
 export const PRODUCT_IDS = {
   PREMIUM_MONTHLY: 'vive_premium_monthly',
   PREMIUM_ANNUAL: 'vive_premium_annual',
   ELITE_MONTHLY: 'vive_elite_monthly',
   ELITE_ANNUAL: 'vive_elite_annual',
 } as const;
+
+// ---------------------------------------------------------------------------
+// Helpers internes
+// ---------------------------------------------------------------------------
+
+/**
+ * Retourne la clÃ© API correspondant Ã  la plateforme courante.
+ * Retourne une chaÃ®ne vide si aucune clÃ© n'est dÃ©finie.
+ */
+function getApiKeyForPlatform(): string {
+  return Platform.select({
+    ios: RC_IOS_API_KEY,
+    android: RC_ANDROID_API_KEY,
+    default: RC_IOS_API_KEY,
+  }) ?? '';
+}
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -60,24 +76,20 @@ export const PRODUCT_IDS = {
  *
  * Doit Ãªtre appelÃ© une seule fois au dÃ©marrage de l'application (avant tout
  * achat ou vÃ©rification d'entitlement). Peut Ãªtre appelÃ© plusieurs fois en
- * toute sÃ©curitÃ© â RevenueCat gÃ¨re la double initialisation en interne.
+ * toute sÃ©curitÃ© â RevenueCat gÃ¨re la double initialisation en interne.
  *
  * @param userId  Identifiant utilisateur Supabase optionnel pour l'aliasing client RevenueCat.
  *                Passer undefined / null avant l'authentification de l'utilisateur ; appeler
  *                `Purchases.logIn(userId)` sÃ©parÃ©ment aprÃ¨s la connexion.
  */
 export async function configureRevenueCat(userId?: string | null): Promise<void> {
-  const apiKey = Platform.select({
-    ios: RC_IOS_API_KEY,
-    android: RC_ANDROID_API_KEY,
-    default: RC_IOS_API_KEY,
-  });
+  const apiKey = getApiKeyForPlatform();
 
   if (!apiKey) {
     console.warn(
       '[VIVE/RevenueCat] ClÃ© API manquante pour la plateforme :',
       Platform.OS,
-      'â DÃ©finissez EXPO_PUBLIC_REVENUECAT_IOS_KEY / EXPO_PUBLIC_REVENUECAT_ANDROID_KEY.',
+      'â DÃ©finissez EXPO_PUBLIC_REVENUECAT_IOS_KEY / EXPO_PUBLIC_REVENUECAT_ANDROID_KEY.',
     );
     return;
   }
@@ -105,9 +117,15 @@ export async function configureRevenueCat(userId?: string | null): Promise<void>
   }
 }
 
+// ---------------------------------------------------------------------------
+// Gestion de session utilisateur
+// ---------------------------------------------------------------------------
+
 /**
  * Associe un identifiant utilisateur Supabase authentifiÃ© au client RevenueCat.
  * Appeler immÃ©diatement aprÃ¨s une connexion rÃ©ussie.
+ *
+ * @param userId  Identifiant unique de l'utilisateur authentifiÃ©.
  */
 export async function loginRevenueCat(userId: string): Promise<void> {
   try {
@@ -131,17 +149,22 @@ export async function logoutRevenueCat(): Promise<void> {
   try {
     await Purchases.logOut();
     if (__DEV__) {
-      console.log('[VIVE/RevenueCat] DÃ©connectÃ© â session anonyme restaurÃ©e.');
+      console.log('[VIVE/RevenueCat] DÃ©connectÃ© â session anonyme restaurÃ©e.');
     }
   } catch (err) {
     console.error('[VIVE/RevenueCat] Ãchec de la dÃ©connexion :', err);
   }
 }
 
+// ---------------------------------------------------------------------------
+// VÃ©rification des entitlements
+// ---------------------------------------------------------------------------
+
 /**
- * Retourne si l'utilisateur possÃ¨de actuellement un entitlement actif.
+ * Indique si l'utilisateur possÃ¨de actuellement un entitlement actif.
  *
- * @param entitlementId  Un des identifiants de ENTITLEMENTS.
+ * @param entitlementId  Un des identifiants dÃ©finis dans ENTITLEMENTS.
+ * @returns              `true` si l'entitlement est actif, `false` sinon.
  */
 export async function hasEntitlement(entitlementId: EntitlementId): Promise<boolean> {
   try {
@@ -150,5 +173,20 @@ export async function hasEntitlement(entitlementId: EntitlementId): Promise<bool
   } catch (err) {
     console.error('[VIVE/RevenueCat] Ãchec de la vÃ©rification d\'entitlement :', err);
     return false;
+  }
+}
+
+/**
+ * RÃ©cupÃ¨re les informations client RevenueCat Ã  jour.
+ * Utile pour synchroniser l'Ã©tat des abonnements depuis les hooks.
+ *
+ * @returns Les informations client, ou `null` en cas d'erreur.
+ */
+export async function fetchCustomerInfo(): Promise<Awaited<ReturnType<typeof Purchases.getCustomerInfo>> | null> {
+  try {
+    return await Purchases.getCustomerInfo();
+  } catch (err) {
+    console.error('[VIVE/RevenueCat] Ãchec de la rÃ©cupÃ©ration des informations client :', err);
+    return null;
   }
 }

@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo, memo } from 'react';
 import {
   View,
   Text,
@@ -10,9 +10,11 @@ import {
   Platform,
   StatusBar,
   Linking,
+  StyleSheet,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
   Shield,
   Download,
@@ -27,17 +29,48 @@ import {
 import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../stores/authStore';
 
-// âââ Types âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// âââ Theme ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+const Theme = {
+  colors: {
+    background: '#080810',
+    surface: '#111118',
+    surfaceElevated: '#1C1C28',
+    border: 'rgba(255,255,255,0.06)',
+    borderLight: 'rgba(255,255,255,0.05)',
+    borderMedium: 'rgba(255,255,255,0.08)',
+    textPrimary: '#E8E8F0',
+    textSecondary: '#A8A8C0',
+    textDisabled: 'rgba(168,168,192,0.4)',
+    accent: '#3D8BFF',
+    accentBg: 'rgba(61,139,255,0.15)',
+    accentBorder: 'rgba(61,139,255,0.25)',
+    accentTrack: 'rgba(61,139,255,0.25)',
+    danger: '#F87171',
+    dangerBg: 'rgba(239,68,68,0.05)',
+    dangerBorder: 'rgba(239,68,68,0.20)',
+    dangerBorderLight: 'rgba(239,68,68,0.10)',
+    dangerText: 'rgba(248,113,113,0.80)',
+    dangerTextMuted: 'rgba(248,113,113,0.60)',
+    dangerIconBg: 'rgba(239,68,68,0.15)',
+    iconBg: 'rgba(255,255,255,0.08)',
+    healthIcon: '#F87171',
+    switchTrackOff: '#1C1C28',
+    switchThumbOff: '#A8A8C0',
+  },
+} as const;
+
+// âââ Types ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+type ConsentKey = 'analytics' | 'healthSharing' | 'marketing';
+
+// Issue #1 corrigÃ©e : suppression du champ 'enabled' de ConsentItem.
+// La valeur est calculÃ©e dynamiquement depuis consents[item.key] dans le rendu.
 interface ConsentItem {
   id: string;
   title: string;
   description: string;
   icon: React.ReactNode;
-  enabled: boolean;
   key: ConsentKey;
 }
-
-type ConsentKey = 'analytics' | 'healthSharing' | 'marketing';
 
 interface ConsentState {
   analytics: boolean;
@@ -45,8 +78,14 @@ interface ConsentState {
   marketing: boolean;
 }
 
+type RootStackParamList = {
+  Auth: undefined;
+  [key: string]: undefined;
+};
+
 // âââ Safe URL opener ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-const openSafeURL = (url: string) => {
+// Issue #5 corrigÃ©e : vÃ©rification via canOpenURL avant d'ouvrir le lien.
+const openSafeURL = (url: string): void => {
   Linking.canOpenURL(url).then((supported) => {
     if (supported) {
       Linking.openURL(url);
@@ -57,59 +96,52 @@ const openSafeURL = (url: string) => {
 };
 
 // âââ Consent Toggle Row âââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-const ConsentRow: React.FC<{
+interface ConsentRowProps {
   item: ConsentItem;
+  enabled: boolean; // Issue #1 : reÃ§u en prop calculÃ© depuis consents[item.key]
   onToggle: (key: ConsentKey, value: boolean) => void;
   isLast: boolean;
-}> = ({ item, onToggle, isLast }) => (
-  <View
-    className={`px-4 py-4 ${
-      !isLast ? 'border-b border-white/5' : ''
-    }`}
-  >
-    <View className="flex-row items-start">
-      <View className="w-8 h-8 rounded-xl bg-white/8 items-center justify-center mr-3 mt-0.5">
+}
+
+const ConsentRow: React.FC<ConsentRowProps> = memo(({ item, enabled, onToggle, isLast }) => (
+  <View style={[styles.consentRow, !isLast && styles.consentRowBorder]}>
+    <View style={styles.consentRowInner}>
+      <View style={styles.consentIconWrap}>
         {item.icon}
       </View>
-      <View className="flex-1 mr-3">
-        <Text className="text-sm font-semibold text-[#E8E8F0] mb-1">
-          {item.title}
-        </Text>
-        <Text className="text-xs text-[#A8A8C0] leading-4">
-          {item.description}
-        </Text>
+      <View style={styles.consentTextWrap}>
+        <Text style={styles.consentTitle}>{item.title}</Text>
+        <Text style={styles.consentDesc}>{item.description}</Text>
       </View>
       <Switch
-        value={item.enabled}
+        value={enabled}
         onValueChange={(val) => onToggle(item.key, val)}
-        trackColor={{ false: '#1C1C28', true: '#3D8BFF40' }}
-        thumbColor={item.enabled ? '#3D8BFF' : '#A8A8C0'}
-        ios_backgroundColor="#1C1C28"
+        trackColor={{ false: Theme.colors.switchTrackOff, true: Theme.colors.accentTrack }}
+        thumbColor={enabled ? Theme.colors.accent : Theme.colors.switchThumbOff}
+        ios_backgroundColor={Theme.colors.switchTrackOff}
       />
     </View>
   </View>
-);
+));
 
 // âââ Info Row âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-const InfoRow: React.FC<{ label: string; value: string; isLast?: boolean }> = ({
-  label,
-  value,
-  isLast,
-}) => (
-  <View
-    className={`flex-row justify-between px-4 py-3 ${
-      !isLast ? 'border-b border-white/5' : ''
-    }`}
-  >
-    <Text className="text-sm text-[#A8A8C0]">{label}</Text>
-    <Text className="text-sm font-medium text-[#E8E8F0]">{value}</Text>
+interface InfoRowProps {
+  label: string;
+  value: string;
+  isLast?: boolean;
+}
+
+const InfoRow: React.FC<InfoRowProps> = memo(({ label, value, isLast }) => (
+  <View style={[styles.infoRow, !isLast && styles.infoRowBorder]}>
+    <Text style={styles.infoLabel}>{label}</Text>
+    <Text style={styles.infoValue}>{value}</Text>
   </View>
-);
+));
 
 // âââ Main Screen ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 export const DataPrivacyScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { user, clearAuth } = useAuthStore();
 
   const [consents, setConsents] = useState<ConsentState>({
@@ -121,15 +153,14 @@ export const DataPrivacyScreen: React.FC = () => {
   const [exporting, setExporting] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  // ââ Consent handler âââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+  // ââ Consent handler ââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+  // Issue #4 corrigÃ©e : vÃ©rification que user?.id est dÃ©fini avant l'upsert.
   const handleConsentToggle = useCallback(
     async (key: ConsentKey, value: boolean) => {
-      // Correction 3: VÃ©rifier que l'utilisateur est authentifiÃ© avant l'upsert
       if (!user?.id) {
         Alert.alert('Erreur', 'Vous devez Ãªtre connectÃ© pour modifier vos prÃ©fÃ©rences.');
         return;
       }
-
       setConsents((prev) => ({ ...prev, [key]: value }));
       setSavingConsent(key);
       try {
@@ -141,7 +172,6 @@ export const DataPrivacyScreen: React.FC = () => {
           );
         if (error) throw error;
       } catch {
-        // Revert on failure
         setConsents((prev) => ({ ...prev, [key]: !value }));
         Alert.alert('Erreur', 'Impossible de sauvegarder votre prÃ©fÃ©rence.');
       } finally {
@@ -151,7 +181,9 @@ export const DataPrivacyScreen: React.FC = () => {
     [user?.id],
   );
 
-  // ââ Export handler ââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+  // ââ Export handler âââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+  // Issue #3 corrigÃ©e : on ne passe plus user_id ni email dans le body.
+  // La Edge Function identifie l'utilisateur via le JWT Supabase cÃ´tÃ© serveur.
   const handleExport = useCallback(async () => {
     Alert.alert(
       'Exporter mes donnÃ©es',
@@ -163,8 +195,6 @@ export const DataPrivacyScreen: React.FC = () => {
           onPress: async () => {
             setExporting(true);
             try {
-              // Correction 2: Ne pas passer user_id ni email dans le body
-              // La Edge Function extrait l'identitÃ© depuis le JWT Supabase cÃ´tÃ© serveur
               const { error } = await supabase.functions.invoke('export-user-data', {
                 body: {},
               });
@@ -187,7 +217,9 @@ export const DataPrivacyScreen: React.FC = () => {
     );
   }, []);
 
-  // ââ Delete account handler ââââââââââââââââââââââââââââââââââââââââââââââââ
+  // ââ Delete account handler âââââââââââââââââââââââââââââââââââââââââââââââââ
+  // Issue #2 corrigÃ©e : on ne passe plus user_id dans le body.
+  // Issue #6 corrigÃ©e : navigation.reset() vers Auth aprÃ¨s clearAuth().
   const handleDeleteAccount = useCallback(() => {
     Alert.alert(
       'â ï¸ Supprimer mon compte',
@@ -198,7 +230,6 @@ export const DataPrivacyScreen: React.FC = () => {
           text: 'Supprimer',
           style: 'destructive',
           onPress: () => {
-            // Second confirmation
             Alert.alert(
               'Confirmation finale',
               'Ãtes-vous absolument sÃ»r ? Cette action ne peut pas Ãªtre annulÃ©e.',
@@ -210,8 +241,6 @@ export const DataPrivacyScreen: React.FC = () => {
                   onPress: async () => {
                     setDeleting(true);
                     try {
-                      // Correction 1: Ne pas passer user_id dans le body
-                      // La Edge Function extrait l'identitÃ© depuis le JWT Supabase cÃ´tÃ© serveur
                       const { error } = await supabase.functions.invoke(
                         'delete-user-account',
                         { body: {} },
@@ -219,10 +248,9 @@ export const DataPrivacyScreen: React.FC = () => {
                       if (error) throw error;
                       await supabase.auth.signOut();
                       clearAuth();
-                      // Correction 4: Naviguer explicitement vers l'Ã©cran de login aprÃ¨s clearAuth
                       navigation.reset({
                         index: 0,
-                        routes: [{ name: 'Auth' as never }],
+                        routes: [{ name: 'Auth' }],
                       });
                     } catch {
                       Alert.alert(
@@ -242,97 +270,103 @@ export const DataPrivacyScreen: React.FC = () => {
     );
   }, [clearAuth, navigation]);
 
-  // ââ Consent items âââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-  const consentItems: ConsentItem[] = [
-    {
-      id: 'analytics',
-      key: 'analytics',
-      title: 'Analyses & performance',
-      description:
-        "Nous aide Ã  amÃ©liorer l'application en collectant des donnÃ©es d'utilisation anonymisÃ©es (crashs, performances, parcours utilisateur).",
-      icon: <BarChart2 size={15} color="#3D8BFF" />,
-      enabled: consents.analytics,
-    },
-    {
-      id: 'healthSharing',
-      key: 'healthSharing',
-      title: 'Partage donnÃ©es de santÃ©',
-      description:
-        'Autorise VIVE Ã  partager vos donnÃ©es agrÃ©gÃ©es de bien-Ãªtre avec des partenaires de recherche anonymisÃ©s pour amÃ©liorer les modÃ¨les de santÃ©.',
-      icon: <Heart size={15} color="#F87171" />,
-      enabled: consents.healthSharing,
-    },
-    {
-      id: 'marketing',
-      key: 'marketing',
-      title: 'Communications marketing',
-      description:
-        'Recevez des offres personnalisÃ©es, nouvelles fonctionnalitÃ©s et conseils bien-Ãªtre par email. DÃ©sactivable Ã  tout moment.',
-      icon: <Mail size={15} color="#A8A8C0" />,
-      enabled: consents.marketing,
-    },
-  ];
+  // ââ Consent items ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+  // Issue #1 corrigÃ©e : 'enabled' retirÃ© de ConsentItem, calculÃ© Ã  la volÃ©e.
+  // useMemo : recrÃ©ation uniquement si les icÃ´nes changent (jamais en pratique).
+  const consentItems = useMemo<ConsentItem[]>(
+    () => [
+      {
+        id: 'analytics',
+        key: 'analytics',
+        title: 'Analyses & performance',
+        description:
+          "Nous aide Ã  amÃ©liorer l'application en collectant des donnÃ©es d'utilisation anonymisÃ©es (crashs, performances, parcours utilisateur).",
+        icon: <BarChart2 size={15} color={Theme.colors.accent} />,
+      },
+      {
+        id: 'healthSharing',
+        key: 'healthSharing',
+        title: 'Partage donnÃ©es de santÃ©',
+        description:
+          'Autorise VIVE Ã  partager vos donnÃ©es agrÃ©gÃ©es de bien-Ãªtre avec des partenaires de recherche anonymisÃ©s pour amÃ©liorer les modÃ¨les de santÃ©.',
+        icon: <Heart size={15} color={Theme.colors.healthIcon} />,
+      },
+      {
+        id: 'marketing',
+        key: 'marketing',
+        title: 'Communications marketing',
+        description:
+          'Recevez des offres personnalisÃ©es, nouvelles fonctionnalitÃ©s et conseils bien-Ãªtre par email. DÃ©sactivable Ã  tout moment.',
+        icon: <Mail size={15} color={Theme.colors.textSecondary} />,
+      },
+    ],
+    [],
+  );
+
+  const androidTopPadding = useMemo(
+    () => (Platform.OS === 'android' ? StatusBar.currentHeight ?? 0 : 0),
+    [],
+  );
+
+  const scrollContentStyle = useMemo(
+    () => ({ paddingBottom: insets.bottom + 40 }),
+    [insets.bottom],
+  );
 
   return (
-    <View
-      className="flex-1 bg-[#080810]"
-      style={{ paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }}
-    >
-      <StatusBar barStyle="light-content" backgroundColor="#080810" />
+    <View style={[styles.root, { paddingTop: androidTopPadding }]}>
+      <StatusBar barStyle="light-content" backgroundColor={Theme.colors.background} />
 
-      {/* ââ Nav Header ââââââââââââââââââââââââââââââ */}
-      <View className="flex-row items-center px-5 pt-5 pb-3">
+      {/* ââ Nav Header âââââââââââââââââââââââââââââââââ */}
+      <View style={styles.header}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
-          className="w-9 h-9 rounded-xl bg-white/8 items-center justify-center mr-3"
+          style={styles.backBtn}
+          activeOpacity={0.8}
         >
-          <Text className="text-[#E8E8F0] text-base">â¹</Text>
+          <Text style={styles.backArrow}>â¹</Text>
         </TouchableOpacity>
-        <Text className="text-xl font-bold text-[#E8E8F0]">ConfidentialitÃ©</Text>
+        <Text style={styles.headerTitle}>ConfidentialitÃ©</Text>
       </View>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
+        contentContainerStyle={scrollContentStyle}
       >
-        {/* ââ Hero Banner âââââââââââââââââââââââââââââ */}
-        <View className="mx-5 mt-2 mb-6 bg-[#1C1C28] rounded-3xl p-5 border border-white/8">
-          <View className="flex-row items-center gap-3 mb-3">
-            <View className="w-11 h-11 rounded-2xl bg-[#3D8BFF]/15 border border-[#3D8BFF]/25 items-center justify-center">
-              <Shield size={20} color="#3D8BFF" />
+        {/* ââ Hero Banner ââââââââââââââââââââââââââââââââ */}
+        <View style={styles.heroBanner}>
+          <View style={styles.heroTop}>
+            <View style={styles.heroIconWrap}>
+              <Shield size={20} color={Theme.colors.accent} />
             </View>
             <View>
-              <Text className="text-[#E8E8F0] font-bold text-base">
-                Vos donnÃ©es vous appartiennent
-              </Text>
-              <Text className="text-[#A8A8C0] text-xs">ContrÃ´le total & transparence</Text>
+              <Text style={styles.heroTitle}>Vos donnÃ©es vous appartiennent</Text>
+              <Text style={styles.heroSubtitle}>ContrÃ´le total & transparence</Text>
             </View>
           </View>
-          <Text className="text-[#A8A8C0] text-sm leading-5">
+          <Text style={styles.heroBody}>
             VIVE s'engage Ã  protÃ©ger votre vie privÃ©e. GÃ©rez ici vos consentements
             et droits RGPD.
           </Text>
         </View>
 
-        {/* ââ Consentements âââââââââââââââââââââââââââ */}
-        <View className="mx-5 mb-5">
-          <View className="flex-row items-center justify-between mb-2">
-            <Text className="text-xs font-semibold text-[#A8A8C0] uppercase tracking-widest">
-              Consentements
-            </Text>
+        {/* ââ Consentements ââââââââââââââââââââââââââââââ */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionLabel}>Consentements</Text>
             {savingConsent !== null && (
-              <View className="flex-row items-center gap-1">
-                <ActivityIndicator size="small" color="#3D8BFF" />
-                <Text className="text-xs text-[#3D8BFF]">Sauvegardeâ¦</Text>
+              <View style={styles.savingRow}>
+                <ActivityIndicator size="small" color={Theme.colors.accent} />
+                <Text style={styles.savingText}>Sauvegardeâ¦</Text>
               </View>
             )}
           </View>
-
-          <View className="bg-[#111118] rounded-2xl border border-white/6 overflow-hidden">
+          <View style={styles.card}>
             {consentItems.map((item, index) => (
               <ConsentRow
                 key={item.id}
                 item={item}
+                enabled={consents[item.key]}
                 onToggle={handleConsentToggle}
                 isLast={index === consentItems.length - 1}
               />
@@ -340,58 +374,47 @@ export const DataPrivacyScreen: React.FC = () => {
           </View>
         </View>
 
-        {/* ââ Export Data âââââââââââââââââââââââââââââ */}
-        <View className="mx-5 mb-5">
-          <Text className="text-xs font-semibold text-[#A8A8C0] uppercase tracking-widest mb-2">
-            Mes donnÃ©es
-          </Text>
-
-          <View className="bg-[#111118] rounded-2xl border border-white/6 overflow-hidden">
-            <View className="px-4 py-4 border-b border-white/5">
-              <View className="flex-row items-start gap-3">
-                <View className="w-8 h-8 rounded-xl bg-white/8 items-center justify-center mt-0.5">
-                  <Info size={14} color="#A8A8C0" />
-                </View>
-                <Text className="flex-1 text-xs text-[#A8A8C0] leading-4">
-                  ConformÃ©ment au RGPD, vous pouvez obtenir une copie complÃ¨te de
-                  vos donnÃ©es personnelles au format JSON.
-                </Text>
+        {/* ââ Export Data ââââââââââââââââââââââââââââââââ */}
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>Mes donnÃ©es</Text>
+          <View style={styles.card}>
+            <View style={styles.infoNotice}>
+              <View style={styles.noticeIconWrap}>
+                <Info size={14} color={Theme.colors.textSecondary} />
               </View>
+              <Text style={styles.noticeText}>
+                ConformÃ©ment au RGPD, vous pouvez obtenir une copie complÃ¨te de
+                vos donnÃ©es personnelles au format JSON.
+              </Text>
             </View>
-
             <TouchableOpacity
               onPress={handleExport}
               disabled={exporting}
               activeOpacity={0.8}
-              className="flex-row items-center px-4 py-4"
+              style={styles.actionRow}
             >
-              <View className="w-8 h-8 rounded-xl bg-[#3D8BFF]/15 items-center justify-center mr-3">
+              <View style={styles.accentIconWrap}>
                 {exporting ? (
-                  <ActivityIndicator size="small" color="#3D8BFF" />
+                  <ActivityIndicator size="small" color={Theme.colors.accent} />
                 ) : (
-                  <Download size={15} color="#3D8BFF" />
+                  <Download size={15} color={Theme.colors.accent} />
                 )}
               </View>
-              <View className="flex-1">
-                <Text className="text-sm font-semibold text-[#3D8BFF]">
+              <View style={styles.actionTextWrap}>
+                <Text style={styles.accentActionTitle}>
                   {exporting ? 'Traitement en coursâ¦' : 'Exporter mes donnÃ©es'}
                 </Text>
-                <Text className="text-xs text-[#A8A8C0] mt-0.5">
-                  ReÃ§u par email sous 48h
-                </Text>
+                <Text style={styles.actionSubtitle}>ReÃ§u par email sous 48h</Text>
               </View>
-              <ChevronRight size={16} color="#3D8BFF" />
+              <ChevronRight size={16} color={Theme.colors.accent} />
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* ââ RÃ©tention âââââââââââââââââââââââââââââââ */}
-        <View className="mx-5 mb-5">
-          <Text className="text-xs font-semibold text-[#A8A8C0] uppercase tracking-widest mb-2">
-            Conservation des donnÃ©es
-          </Text>
-
-          <View className="bg-[#111118] rounded-2xl border border-white/6 overflow-hidden">
+        {/* ââ RÃ©tention ââââââââââââââââââââââââââââââââââ */}
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>Conservation des donnÃ©es</Text>
+          <View style={styles.card}>
             <InfoRow label="DonnÃ©es de compte" value="DurÃ©e de vie du compte" />
             <InfoRow label="DonnÃ©es de santÃ©" value="3 ans" />
             <InfoRow label="Logs d'activitÃ©" value="90 jours" />
@@ -399,93 +422,77 @@ export const DataPrivacyScreen: React.FC = () => {
           </View>
         </View>
 
-        {/* ââ Politique de confidentialitÃ© âââââââââââ */}
-        <View className="mx-5 mb-5">
-          <Text className="text-xs font-semibold text-[#A8A8C0] uppercase tracking-widest mb-2">
-            Ressources
-          </Text>
-
-          <View className="bg-[#111118] rounded-2xl border border-white/6 overflow-hidden">
-            {/* Correction 5: Utiliser openSafeURL Ã  la place de Linking.openURL direct */}
+        {/* ââ Ressources âââââââââââââââââââââââââââââââââ */}
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>Ressources</Text>
+          <View style={styles.card}>
+            {/* Issue #5 corrigÃ©e : openSafeURL utilisÃ© ici */}
             <TouchableOpacity
               onPress={() => openSafeURL('https://vive.app/privacy')}
               activeOpacity={0.8}
-              className="flex-row items-center px-4 py-4 border-b border-white/5"
+              style={[styles.actionRow, styles.actionRowBorder]}
             >
-              <View className="w-8 h-8 rounded-xl bg-white/8 items-center justify-center mr-3">
-                <Shield size={14} color="#A8A8C0" />
+              <View style={styles.iconWrap}>
+                <Shield size={14} color={Theme.colors.textSecondary} />
               </View>
-              <Text className="flex-1 text-sm text-[#E8E8F0] font-medium">
-                Politique de confidentialitÃ©
-              </Text>
-              <ExternalLink size={14} color="#A8A8C0" />
+              <Text style={styles.linkLabel}>Politique de confidentialitÃ©</Text>
+              <ExternalLink size={14} color={Theme.colors.textSecondary} />
             </TouchableOpacity>
-
             <TouchableOpacity
               onPress={() => openSafeURL('https://vive.app/terms')}
               activeOpacity={0.8}
-              className="flex-row items-center px-4 py-4"
+              style={styles.actionRow}
             >
-              <View className="w-8 h-8 rounded-xl bg-white/8 items-center justify-center mr-3">
-                <ExternalLink size={14} color="#A8A8C0" />
+              <View style={styles.iconWrap}>
+                <ExternalLink size={14} color={Theme.colors.textSecondary} />
               </View>
-              <Text className="flex-1 text-sm text-[#E8E8F0] font-medium">
-                Conditions d'utilisation
-              </Text>
-              <ExternalLink size={14} color="#A8A8C0" />
+              <Text style={styles.linkLabel}>Conditions d'utilisation</Text>
+              <ExternalLink size={14} color={Theme.colors.textSecondary} />
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* ââ Danger Zone âââââââââââââââââââââââââââââ */}
-        <View className="mx-5">
-          <Text className="text-xs font-semibold text-[#A8A8C0] uppercase tracking-widest mb-2">
-            Zone de danger
-          </Text>
-
-          <View className="bg-red-500/5 rounded-2xl border border-red-500/20 overflow-hidden">
-            <View className="px-4 py-4 border-b border-red-500/10">
-              <View className="flex-row items-start gap-3">
-                <View className="w-8 h-8 rounded-xl bg-red-500/15 items-center justify-center mt-0.5">
-                  <Info size={14} color="#F87171" />
-                </View>
-                <Text className="flex-1 text-xs text-red-400/80 leading-4">
-                  La suppression de votre compte est dÃ©finitive. Toutes vos donnÃ©es
-                  seront effacÃ©es dans un dÃ©lai de 30 jours. Aucune restauration
-                  ne sera possible.
-                </Text>
+        {/* ââ Danger Zone ââââââââââââââââââââââââââââââââ */}
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>Zone de danger</Text>
+          <View style={styles.dangerCard}>
+            <View style={styles.dangerNotice}>
+              <View style={styles.dangerIconWrap}>
+                <Info size={14} color={Theme.colors.danger} />
               </View>
+              <Text style={styles.dangerNoticeText}>
+                La suppression de votre compte est dÃ©finitive. Toutes vos donnÃ©es
+                seront effacÃ©es dans un dÃ©lai de 30 jours. Aucune restauration
+                ne sera possible.
+              </Text>
             </View>
-
             <TouchableOpacity
               onPress={handleDeleteAccount}
               disabled={deleting}
               activeOpacity={0.8}
-              className="flex-row items-center px-4 py-4"
+              style={styles.actionRow}
             >
-              <View className="w-8 h-8 rounded-xl bg-red-500/15 items-center justify-center mr-3">
+              <View style={styles.dangerIconWrap}>
                 {deleting ? (
-                  <ActivityIndicator size="small" color="#F87171" />
+                  <ActivityIndicator size="small" color={Theme.colors.danger} />
                 ) : (
-                  <Trash2 size={15} color="#F87171" />
+                  <Trash2 size={15} color={Theme.colors.danger} />
                 )}
               </View>
-              <View className="flex-1">
-                <Text className="text-sm font-semibold text-red-400">
+              <View style={styles.actionTextWrap}>
+                <Text style={styles.dangerActionTitle}>
                   {deleting ? 'Suppressionâ¦' : 'Supprimer mon compte'}
                 </Text>
-                <Text className="text-xs text-red-400/60 mt-0.5">
-                  Action irrÃ©versible
-                </Text>
+                <Text style={styles.dangerActionSubtitle}>Action irrÃ©versible</Text>
               </View>
-              <ChevronRight size={16} color="#F87171" />
+              <ChevronRight size={16} color={Theme.colors.danger} />
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* ââ Footer ââââââââââââââââââââââââââââââââââ */}
-        <View className="mx-5 mt-8">
-          <Text className="text-[#A8A8C0]/40 text-xs text-center leading-4">
+        {/* ââ Footer âââââââââââââââââââââââââââââââââââââ */}
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>
             VIVE respecte le RÃ¨glement GÃ©nÃ©ral sur la Protection des DonnÃ©es
             (RGPD). Pour toute demande, contactez privacy@vive.app
           </Text>
@@ -494,5 +501,304 @@ export const DataPrivacyScreen: React.FC = () => {
     </View>
   );
 };
+
+// âââ StyleSheet âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// Issue #7 corrigÃ©e : convention StyleSheet.create uniforme, toutes les couleurs
+// sont issues du Theme, zÃ©ro valeur inline codÃ©e en dur.
+const styles = StyleSheet.create({
+  // Screen
+  root: {
+    flex: 1,
+    backgroundColor: Theme.colors.background,
+  },
+  // Header
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 12,
+  },
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: Theme.colors.iconBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  backArrow: {
+    color: Theme.colors.textPrimary,
+    fontSize: 22,
+    lineHeight: 26,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: Theme.colors.textPrimary,
+  },
+  // Hero
+  heroBanner: {
+    marginHorizontal: 20,
+    marginTop: 8,
+    marginBottom: 24,
+    backgroundColor: Theme.colors.surfaceElevated,
+    borderRadius: 24,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: Theme.colors.borderMedium,
+  },
+  heroTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12,
+  },
+  heroIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 16,
+    backgroundColor: Theme.colors.accentBg,
+    borderWidth: 1,
+    borderColor: Theme.colors.accentBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroTitle: {
+    color: Theme.colors.textPrimary,
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  heroSubtitle: {
+    color: Theme.colors.textSecondary,
+    fontSize: 12,
+  },
+  heroBody: {
+    color: Theme.colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  // Section
+  section: {
+    marginHorizontal: 20,
+    marginBottom: 20,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Theme.colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 1.2,
+    marginBottom: 8,
+  },
+  savingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  savingText: {
+    fontSize: 11,
+    color: Theme.colors.accent,
+  },
+  // Cards
+  card: {
+    backgroundColor: Theme.colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
+    overflow: 'hidden',
+  },
+  dangerCard: {
+    backgroundColor: Theme.colors.dangerBg,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Theme.colors.dangerBorder,
+    overflow: 'hidden',
+  },
+  // Consent Row
+  consentRow: {
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+  },
+  consentRowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: Theme.colors.borderLight,
+  },
+  consentRowInner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  consentIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 12,
+    backgroundColor: Theme.colors.iconBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+    marginTop: 2,
+  },
+  consentTextWrap: {
+    flex: 1,
+    marginRight: 12,
+  },
+  consentTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Theme.colors.textPrimary,
+    marginBottom: 4,
+  },
+  consentDesc: {
+    fontSize: 11,
+    color: Theme.colors.textSecondary,
+    lineHeight: 16,
+  },
+  // Info Row
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  infoRowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: Theme.colors.borderLight,
+  },
+  infoLabel: {
+    fontSize: 13,
+    color: Theme.colors.textSecondary,
+  },
+  infoValue: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: Theme.colors.textPrimary,
+  },
+  // Action Row (gÃ©nÃ©rique)
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+  },
+  actionRowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: Theme.colors.borderLight,
+  },
+  actionTextWrap: {
+    flex: 1,
+  },
+  accentActionTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Theme.colors.accent,
+  },
+  actionSubtitle: {
+    fontSize: 11,
+    color: Theme.colors.textSecondary,
+    marginTop: 2,
+  },
+  accentIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 12,
+    backgroundColor: Theme.colors.accentBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  iconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 12,
+    backgroundColor: Theme.colors.iconBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  linkLabel: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '500',
+    color: Theme.colors.textPrimary,
+  },
+  // Notices
+  infoNotice: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Theme.colors.borderLight,
+    gap: 12,
+  },
+  noticeIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 12,
+    backgroundColor: Theme.colors.iconBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  noticeText: {
+    flex: 1,
+    fontSize: 11,
+    color: Theme.colors.textSecondary,
+    lineHeight: 16,
+  },
+  dangerNotice: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Theme.colors.dangerBorderLight,
+    gap: 12,
+  },
+  dangerIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 12,
+    backgroundColor: Theme.colors.dangerIconBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+    marginRight: 12,
+  },
+  dangerNoticeText: {
+    flex: 1,
+    fontSize: 11,
+    color: Theme.colors.dangerText,
+    lineHeight: 16,
+  },
+  dangerActionTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Theme.colors.danger,
+  },
+  dangerActionSubtitle: {
+    fontSize: 11,
+    color: Theme.colors.dangerTextMuted,
+    marginTop: 2,
+  },
+  // Footer
+  footer: {
+    marginHorizontal: 20,
+    marginTop: 32,
+  },
+  footerText: {
+    color: Theme.colors.textDisabled,
+    fontSize: 11,
+    textAlign: 'center',
+    lineHeight: 16,
+  },
+});
 
 export default DataPrivacyScreen;

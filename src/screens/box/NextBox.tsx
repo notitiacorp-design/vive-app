@@ -30,7 +30,27 @@ interface TimeLeft {
   seconds: number;
 }
 
-// âââ Helpers âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// âââ Theme ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+
+const Theme = {
+  bg: '#080810',
+  surface: '#111118',
+  surfaceAlt: '#1C1C28',
+  primary: '#3D8BFF',
+  primaryDark: '#1A5FCC',
+  textPrimary: '#E8E8F0',
+  textSecondary: '#A8A8C0',
+  white: '#FFFFFF',
+  primaryAlpha08: '#3D8BFF08',
+  primaryAlpha11: '#3D8BFF1A',
+  primaryAlpha22: '#3D8BFF22',
+  primaryAlpha33: '#3D8BFF33',
+  primaryAlpha44: '#3D8BFF44',
+  surfaceAlpha50: '#1C1C2880',
+  headerGradientStart: '#0D1A2D',
+} as const;
+
+// âââ Helpers ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 function getDeliveryDate(): Date {
   const now = new Date();
@@ -54,9 +74,32 @@ function pad(n: number): string {
   return String(n).padStart(2, '0');
 }
 
+// âââ Hook useCountdown ââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+
+function useCountdown(targetDate: Date): TimeLeft {
+  const [timeLeft, setTimeLeft] = useState<TimeLeft>(() =>
+    calculateTimeLeft(targetDate)
+  );
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTimeLeft(calculateTimeLeft(targetDate));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [targetDate]);
+
+  return timeLeft;
+}
+
 // âââ Sub-components âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
-function CountdownUnit({ value, label }: { value: number; label: string }) {
+const CountdownUnit = React.memo(function CountdownUnit({
+  value,
+  label,
+}: {
+  value: number;
+  label: string;
+}) {
   return (
     <View style={styles.countdownUnit}>
       <View style={styles.countdownBox}>
@@ -65,16 +108,24 @@ function CountdownUnit({ value, label }: { value: number; label: string }) {
       <Text style={styles.countdownLabel}>{label}</Text>
     </View>
   );
-}
+});
 
-function BoxIllustration() {
+const BoxIllustration = React.memo(function BoxIllustration() {
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     const animation = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.04, duration: 1800, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1, duration: 1800, useNativeDriver: true }),
+        Animated.timing(pulseAnim, {
+          toValue: 1.04,
+          duration: 1800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 1800,
+          useNativeDriver: true,
+        }),
       ])
     );
     animation.start();
@@ -88,19 +139,19 @@ function BoxIllustration() {
       <View style={styles.boxIllustrationContainer}>
         <View style={styles.boxIllustrationOverlay} />
         <View style={styles.lockIconWrapper}>
+          <View style={styles.lockShackle} />
           <View style={styles.lockBody}>
             <View style={styles.lockKeyhole} />
           </View>
-          <View style={styles.lockShackle} />
         </View>
         <Text style={styles.mysteryText}>Contenu mystÃ¨re</Text>
         <View style={styles.boxIllustrationBottomOverlay} />
       </View>
     </Animated.View>
   );
-}
+});
 
-function HeroTeaser() {
+const HeroTeaser = React.memo(function HeroTeaser() {
   return (
     <View style={styles.heroTeaserContainer}>
       <View style={styles.heroTeaserHeader}>
@@ -112,17 +163,19 @@ function HeroTeaser() {
           <Text style={styles.heroTeaserQuestionMark}>?</Text>
         </View>
         <View style={styles.heroTeaserLines}>
-          <View style={[styles.heroTeaserLine, { width: '70%' }]} />
-          <View style={[styles.heroTeaserLine, { width: '90%', height: 10, borderRadius: 5 }]} />
-          <View style={[styles.heroTeaserLine, { width: '55%', height: 10, borderRadius: 5 }]} />
+          <View style={styles.heroTeaserLineWide} />
+          <View style={styles.heroTeaserLineMedium} />
+          <View style={styles.heroTeaserLineNarrow} />
         </View>
       </View>
       <View style={styles.heroTeaserBadge}>
-        <Text style={styles.heroTeaserBadgeText}>â¦ RÃ©vÃ©lÃ© Ã  J-0 lors de la validation</Text>
+        <Text style={styles.heroTeaserBadgeText}>
+          â¦ RÃ©vÃ©lÃ© Ã  J-0 lors de la validation
+        </Text>
       </View>
     </View>
   );
-}
+});
 
 // âââ Styles âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
@@ -133,27 +186,27 @@ const styles = StyleSheet.create({
     marginHorizontal: 12,
   },
   countdownBox: {
-    backgroundColor: '#1C1C28',
+    backgroundColor: Theme.surfaceAlt,
     borderWidth: 1,
-    borderColor: '#3D8BFF33',
+    borderColor: Theme.primaryAlpha33,
     borderRadius: 14,
     width: 72,
     height: 72,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#3D8BFF',
+    shadowColor: Theme.primary,
     shadowOpacity: 0.18,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 },
   },
   countdownValue: {
-    color: '#E8E8F0',
+    color: Theme.textPrimary,
     fontSize: 30,
     fontWeight: '700',
     letterSpacing: 1,
   },
   countdownLabel: {
-    color: '#A8A8C0',
+    color: Theme.textSecondary,
     fontSize: 11,
     marginTop: 6,
     fontWeight: '500',
@@ -165,12 +218,12 @@ const styles = StyleSheet.create({
     width: 200,
     height: 200,
     borderRadius: 32,
-    backgroundColor: '#1C1C28',
+    backgroundColor: Theme.surfaceAlt,
     borderWidth: 1.5,
-    borderColor: '#3D8BFF44',
+    borderColor: Theme.primaryAlpha44,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#3D8BFF',
+    shadowColor: Theme.primary,
     shadowOpacity: 0.3,
     shadowRadius: 30,
     shadowOffset: { width: 0, height: 8 },
@@ -182,7 +235,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: '#3D8BFF08',
+    backgroundColor: Theme.primaryAlpha08,
   },
   lockIconWrapper: {
     alignItems: 'center',
@@ -191,19 +244,19 @@ const styles = StyleSheet.create({
     width: 44,
     height: 32,
     borderRadius: 8,
-    backgroundColor: '#3D8BFF',
+    backgroundColor: Theme.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 4,
-    shadowColor: '#3D8BFF',
+    shadowColor: Theme.primary,
     shadowOpacity: 0.6,
     shadowRadius: 12,
+    shadowOffset: { width: 0, height: 0 },
   },
   lockKeyhole: {
     width: 14,
     height: 10,
     borderRadius: 2,
-    backgroundColor: '#080810',
+    backgroundColor: Theme.bg,
   },
   lockShackle: {
     width: 24,
@@ -212,11 +265,11 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 12,
     borderWidth: 3,
     borderBottomWidth: 0,
-    borderColor: '#3D8BFF',
+    borderColor: Theme.primary,
     marginBottom: -4,
   },
   mysteryText: {
-    color: '#A8A8C0',
+    color: Theme.textSecondary,
     fontSize: 12,
     marginTop: 16,
     fontWeight: '500',
@@ -228,16 +281,16 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 60,
-    backgroundColor: '#1C1C2880',
+    backgroundColor: Theme.surfaceAlpha50,
   },
   // HeroTeaser
   heroTeaserContainer: {
-    backgroundColor: '#111118',
+    backgroundColor: Theme.surface,
     borderRadius: 20,
     padding: 20,
     marginHorizontal: 20,
     borderWidth: 1,
-    borderColor: '#1C1C28',
+    borderColor: Theme.surfaceAlt,
   },
   heroTeaserHeader: {
     flexDirection: 'row',
@@ -248,14 +301,15 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#3D8BFF',
+    backgroundColor: Theme.primary,
     marginRight: 8,
-    shadowColor: '#3D8BFF',
+    shadowColor: Theme.primary,
     shadowOpacity: 0.8,
     shadowRadius: 4,
+    shadowOffset: { width: 0, height: 0 },
   },
   heroTeaserTitle: {
-    color: '#A8A8C0',
+    color: Theme.textSecondary,
     fontSize: 11,
     fontWeight: '600',
     letterSpacing: 1.4,
@@ -269,46 +323,61 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 14,
-    backgroundColor: '#1C1C28',
+    backgroundColor: Theme.surfaceAlt,
     borderWidth: 1,
-    borderColor: '#3D8BFF22',
+    borderColor: Theme.primaryAlpha22,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 14,
   },
   heroTeaserQuestionMark: {
-    color: '#3D8BFF',
+    color: Theme.primary,
     fontSize: 28,
     fontWeight: '700',
   },
   heroTeaserLines: {
     flex: 1,
   },
-  heroTeaserLine: {
+  heroTeaserLineWide: {
     height: 14,
     borderRadius: 7,
-    backgroundColor: '#1C1C28',
+    backgroundColor: Theme.surfaceAlt,
     marginBottom: 8,
+    width: '70%',
+  },
+  heroTeaserLineMedium: {
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: Theme.surfaceAlt,
+    marginBottom: 8,
+    width: '90%',
+  },
+  heroTeaserLineNarrow: {
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: Theme.surfaceAlt,
+    marginBottom: 8,
+    width: '55%',
   },
   heroTeaserBadge: {
     marginTop: 16,
     padding: 10,
-    backgroundColor: '#3D8BFF11',
+    backgroundColor: Theme.primaryAlpha11,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#3D8BFF22',
+    borderColor: Theme.primaryAlpha22,
     flexDirection: 'row',
     alignItems: 'center',
   },
   heroTeaserBadgeText: {
-    color: '#3D8BFF',
+    color: Theme.primary,
     fontSize: 12,
     fontWeight: '500',
   },
   // NextBox screen
   screenContainer: {
     flex: 1,
-    backgroundColor: '#080810',
+    backgroundColor: Theme.bg,
   },
   safeArea: {
     flex: 1,
@@ -321,24 +390,27 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
     alignItems: 'center',
   },
+  animatedHeader: {
+    alignItems: 'center',
+  },
   badge: {
-    backgroundColor: '#3D8BFF1A',
+    backgroundColor: Theme.primaryAlpha11,
     borderWidth: 1,
-    borderColor: '#3D8BFF44',
+    borderColor: Theme.primaryAlpha44,
     borderRadius: 20,
     paddingHorizontal: 14,
     paddingVertical: 5,
     marginBottom: 20,
   },
   badgeText: {
-    color: '#3D8BFF',
+    color: Theme.primary,
     fontSize: 11,
     fontWeight: '600',
     letterSpacing: 1.4,
     textTransform: 'uppercase',
   },
   title: {
-    color: '#E8E8F0',
+    color: Theme.textPrimary,
     fontSize: 28,
     fontWeight: '700',
     textAlign: 'center',
@@ -346,7 +418,7 @@ const styles = StyleSheet.create({
     letterSpacing: -0.5,
   },
   subtitle: {
-    color: '#A8A8C0',
+    color: Theme.textSecondary,
     fontSize: 15,
     textAlign: 'center',
     marginBottom: 32,
@@ -358,7 +430,7 @@ const styles = StyleSheet.create({
     paddingTop: 8,
   },
   countdownSectionLabel: {
-    color: '#A8A8C0',
+    color: Theme.textSecondary,
     fontSize: 12,
     fontWeight: '600',
     letterSpacing: 1.6,
@@ -370,26 +442,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   countdownSeparator: {
-    color: '#3D8BFF',
+    color: Theme.primary,
     fontSize: 28,
     fontWeight: '300',
     marginBottom: 18,
   },
   jxBadge: {
     marginTop: 16,
-    backgroundColor: '#3D8BFF',
+    backgroundColor: Theme.primary,
     borderRadius: 10,
     paddingHorizontal: 16,
     paddingVertical: 4,
   },
   jxBadgeText: {
-    color: '#fff',
+    color: Theme.white,
     fontWeight: '700',
     fontSize: 13,
     letterSpacing: 0.5,
   },
   selectionTitle: {
-    color: '#E8E8F0',
+    color: Theme.textPrimary,
     fontSize: 17,
     fontWeight: '700',
     marginLeft: 20,
@@ -404,24 +476,24 @@ const styles = StyleSheet.create({
   },
   infoCard: {
     flex: 1,
-    backgroundColor: '#111118',
+    backgroundColor: Theme.surface,
     borderRadius: 16,
     padding: 14,
     borderWidth: 1,
-    borderColor: '#1C1C28',
+    borderColor: Theme.surfaceAlt,
   },
   infoCardIcon: {
-    color: '#3D8BFF',
+    color: Theme.primary,
     fontSize: 18,
     marginBottom: 6,
   },
   infoCardLabel: {
-    color: '#E8E8F0',
+    color: Theme.textPrimary,
     fontSize: 13,
     fontWeight: '600',
   },
   infoCardSub: {
-    color: '#A8A8C0',
+    color: Theme.textSecondary,
     fontSize: 11,
     marginTop: 2,
   },
@@ -433,53 +505,90 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     paddingVertical: 18,
     alignItems: 'center',
-    shadowColor: '#3D8BFF',
+    shadowColor: Theme.primary,
     shadowOpacity: 0.4,
     shadowRadius: 20,
     shadowOffset: { width: 0, height: 8 },
   },
   ctaText: {
-    color: '#fff',
+    color: Theme.white,
     fontSize: 16,
     fontWeight: '700',
     letterSpacing: 0.3,
   },
   ctaSubtext: {
-    color: '#A8A8C0',
+    color: Theme.textSecondary,
     fontSize: 12,
     textAlign: 'center',
     marginTop: 10,
   },
+  ctaPressable: {
+    width: '100%',
+  },
+});
+
+// âââ Info Card Item âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+
+interface InfoCardItem {
+  icon: string;
+  label: string;
+  sub: string;
+}
+
+const INFO_CARDS: InfoCardItem[] = [
+  { icon: 'â¦', label: '3â5 produits', sub: 'sÃ©lectionnÃ©s pour vous' },
+  { icon: 'â', label: 'Valeur +120â¬', sub: 'garanti dans chaque box' },
+];
+
+const InfoCard = React.memo(function InfoCard({ item }: { item: InfoCardItem }) {
+  return (
+    <View style={styles.infoCard}>
+      <Text style={styles.infoCardIcon}>{item.icon}</Text>
+      <Text style={styles.infoCardLabel}>{item.label}</Text>
+      <Text style={styles.infoCardSub}>{item.sub}</Text>
+    </View>
+  );
 });
 
 // âââ Main Screen ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 export default function NextBox() {
   const navigation = useNavigation<NavigationProp>();
-  const deliveryDate = useRef(getDeliveryDate()).current;
-  const [timeLeft, setTimeLeft] = useState<TimeLeft>(calculateTimeLeft(deliveryDate));
+
+  // Issue 6 : une seule source de vÃ©ritÃ© pour la date de livraison
+  const deliveryDate = useRef<Date>(getDeliveryDate()).current;
+
+  // Issue 7 : logique countdown extraite dans un hook dÃ©diÃ©
+  const timeLeft = useCountdown(deliveryDate);
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
+  // Issue 4 : cleanup de l'animation fade
   useEffect(() => {
-    Animated.timing(fadeAnim, { toValue: 1, duration: 800, useNativeDriver: true }).start();
+    const anim = Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 800,
+      useNativeDriver: true,
+    });
+    anim.start();
+    return () => {
+      anim.stop();
+    };
   }, [fadeAnim]);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setTimeLeft(calculateTimeLeft(deliveryDate));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [deliveryDate]);
 
   const handleValidate = useCallback(() => {
     navigation.navigate('BoxValidation');
   }, [navigation]);
 
-  const monthLabel = deliveryDate.toLocaleString('fr-FR', { month: 'long', year: 'numeric' });
+  // Issue 9 : monthLabel en minuscules avant toUpperCase() pour Ã©viter
+  // un double uppercase si la locale renvoie dÃ©jÃ  des majuscules
+  const monthLabel = deliveryDate
+    .toLocaleString('fr-FR', { month: 'long', year: 'numeric' })
+    .toLowerCase();
 
   return (
     <View style={styles.screenContainer}>
-      <StatusBar barStyle="light-content" backgroundColor="#080810" />
+      <StatusBar barStyle="light-content" backgroundColor={Theme.bg} />
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <ScrollView
           contentContainerStyle={styles.scrollContent}
@@ -487,13 +596,14 @@ export default function NextBox() {
         >
           {/* Header gradient */}
           <LinearGradient
-            colors={['#0D1A2D', '#080810']}
+            colors={[Theme.headerGradientStart, Theme.bg]}
             style={styles.headerGradient}
           >
-            <Animated.View style={{ opacity: fadeAnim, alignItems: 'center' }}>
+            <Animated.View style={[styles.animatedHeader, { opacity: fadeAnim }]}>
               {/* Badge */}
               <View style={styles.badge}>
                 <Text style={styles.badgeText}>
+                  {/* Issue 9 : monthLabel dÃ©jÃ  en lowercase, toUpperCase() sans risque de double */}
                   VIVE BOX Â· {monthLabel.toUpperCase()}
                 </Text>
               </View>
@@ -503,13 +613,13 @@ export default function NextBox() {
                 PrÃ©parez-vous Ã  recevoir votre sÃ©lection premium personnalisÃ©e
               </Text>
 
-              {/* Box illustration */}
+              {/* Issue 1 + 2 : BoxIllustration avec cleanup loop et styles StyleSheet */}
               <BoxIllustration />
             </Animated.View>
           </LinearGradient>
 
           <Animated.View style={{ opacity: fadeAnim }}>
-            {/* Countdown section */}
+            {/* Issue 8 : countdown affiche maintenant aussi les secondes */}
             <View style={styles.countdownSection}>
               <Text style={styles.countdownSectionLabel}>Livraison dans</Text>
               <View style={styles.countdownRow}>
@@ -518,8 +628,9 @@ export default function NextBox() {
                 <CountdownUnit value={timeLeft.hours} label="Heures" />
                 <Text style={styles.countdownSeparator}>:</Text>
                 <CountdownUnit value={timeLeft.minutes} label="Minutes" />
+                <Text style={styles.countdownSeparator}>:</Text>
+                <CountdownUnit value={timeLeft.seconds} label="Secondes" />
               </View>
-              {/* J-X label */}
               <View style={styles.jxBadge}>
                 <Text style={styles.jxBadgeText}>J-{timeLeft.days}</Text>
               </View>
@@ -531,15 +642,8 @@ export default function NextBox() {
 
             {/* Info cards */}
             <View style={styles.infoCardsRow}>
-              {[
-                { icon: 'â¦', label: '3â5 produits', sub: 'sÃ©lectionnÃ©s pour vous' },
-                { icon: 'â', label: 'Valeur +120â¬', sub: 'garanti dans chaque box' },
-              ].map((item) => (
-                <View key={item.label} style={styles.infoCard}>
-                  <Text style={styles.infoCardIcon}>{item.icon}</Text>
-                  <Text style={styles.infoCardLabel}>{item.label}</Text>
-                  <Text style={styles.infoCardSub}>{item.sub}</Text>
-                </View>
+              {INFO_CARDS.map((item) => (
+                <InfoCard key={item.label} item={item} />
               ))}
             </View>
 
@@ -547,13 +651,16 @@ export default function NextBox() {
             <View style={styles.ctaWrapper}>
               <Pressable
                 onPress={handleValidate}
-                style={({ pressed }) => ({
-                  opacity: pressed ? 0.85 : 1,
-                  transform: [{ scale: pressed ? 0.98 : 1 }],
-                })}
+                style={({ pressed }) => ([
+                  styles.ctaPressable,
+                  {
+                    opacity: pressed ? 0.85 : 1,
+                    transform: [{ scale: pressed ? 0.98 : 1 }],
+                  },
+                ])}
               >
                 <LinearGradient
-                  colors={['#3D8BFF', '#1A5FCC']}
+                  colors={[Theme.primary, Theme.primaryDark]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                   style={styles.ctaGradient}

@@ -1,12 +1,14 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import {
   View,
   Text,
-  ScrollView,
+  FlatList,
   TouchableOpacity,
   Alert,
   Platform,
   StatusBar,
+  StyleSheet,
+  ListRenderItem,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -14,7 +16,6 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../stores/authStore';
 
-// ─── Icons (lucide-react-native) ────────────────────────────────────────────
 import {
   User,
   CreditCard,
@@ -27,7 +28,38 @@ import {
   Crown,
 } from 'lucide-react-native';
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// âââ ThÃ¨me âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+const Theme = {
+  bg: '#080810',
+  surface: '#1C1C28',
+  surfaceAlt: '#111118',
+  textPrimary: '#E8E8F0',
+  textSecondary: '#A8A8C0',
+  accent: '#3D8BFF',
+  danger: '#F87171',
+  dangerBg: 'rgba(239,68,68,0.10)',
+  dangerBorder: 'rgba(239,68,68,0.25)',
+  dangerIcon: 'rgba(239,68,68,0.15)',
+  borderSubtle: 'rgba(255,255,255,0.05)',
+  borderMedium: 'rgba(255,255,255,0.06)',
+  borderStrong: 'rgba(255,255,255,0.08)',
+  accentBg: 'rgba(61,139,255,0.20)',
+  accentBorder: 'rgba(61,139,255,0.30)',
+  iconBg: 'rgba(255,255,255,0.08)',
+  premiumBg: 'rgba(61,139,255,0.20)',
+  premiumBorder: 'rgba(61,139,255,0.40)',
+  eliteBg: 'rgba(234,179,8,0.20)',
+  eliteBorder: 'rgba(234,179,8,0.40)',
+  eliteText: '#FBBF24',
+  badgeBg: 'rgba(61,139,255,0.20)',
+  versionText: 'rgba(168,168,192,0.50)',
+  footerText: 'rgba(168,168,192,0.30)',
+} as const;
+
+const APP_VERSION = '1.0.0';
+const BUILD_NUMBER = '42';
+
+// âââ Types âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 type RootStackParamList = {
   Settings: undefined;
   Subscription: undefined;
@@ -54,69 +86,200 @@ interface SettingSection {
   items: SettingItem[];
 }
 
-// ─── Plan Badge ──────────────────────────────────────────────────────────────
-const PlanBadge: React.FC<{ plan: string }> = ({ plan }) => {
+// âââ Plan Badge ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+interface PlanBadgeProps {
+  plan: string;
+}
+
+const PlanBadge: React.FC<PlanBadgeProps> = React.memo(({ plan }) => {
   const isPremium = plan === 'Premium';
   const isElite = plan === 'Elite';
 
-  const badgeClass = isElite
-    ? 'bg-yellow-500/20 border border-yellow-500/40'
-    : isPremium
-    ? 'bg-blue-500/20 border border-blue-500/40'
-    : 'bg-white/10 border border-white/20';
+  const containerStyle = useMemo(
+    () => [
+      styles.planBadge,
+      isElite
+        ? styles.planBadgeElite
+        : isPremium
+        ? styles.planBadgePremium
+        : styles.planBadgeFree,
+    ],
+    [isElite, isPremium],
+  );
 
-  const textClass = isElite
-    ? 'text-yellow-400'
-    : isPremium
-    ? 'text-blue-400'
-    : 'text-[#A8A8C0]';
+  const textStyle = useMemo(
+    () => [
+      styles.planBadgeText,
+      isElite
+        ? styles.planBadgeTextElite
+        : isPremium
+        ? styles.planBadgeTextPremium
+        : styles.planBadgeTextFree,
+    ],
+    [isElite, isPremium],
+  );
 
   return (
-    <View className={`px-2.5 py-1 rounded-full flex-row items-center gap-1 ${badgeClass}`}>
-      {isElite || isPremium ? (
-        <Crown size={10} color={isElite ? '#FBBF24' : '#3D8BFF'} />
-      ) : null}
-      <Text className={`text-xs font-semibold ${textClass}`}>{plan}</Text>
+    <View style={containerStyle}>
+      {(isElite || isPremium) && (
+        <Crown size={10} color={isElite ? Theme.eliteText : Theme.accent} />
+      )}
+      <Text style={textStyle}>{plan}</Text>
     </View>
   );
-};
+});
 
-// ─── Section Row ─────────────────────────────────────────────────────────────
-const SettingRow: React.FC<{ item: SettingItem; isLast: boolean }> = ({
-  item,
-  isLast,
-}) => (
-  <TouchableOpacity
-    onPress={item.onPress}
-    activeOpacity={0.7}
-    className={`flex-row items-center px-4 py-3.5 ${
-      !isLast ? 'border-b border-white/5' : ''
-    }`}
-  >
-    <View
-      className={`w-8 h-8 rounded-xl items-center justify-center mr-3 ${
-        item.danger ? 'bg-red-500/15' : 'bg-white/8'
-      }`}
+PlanBadge.displayName = 'PlanBadge';
+
+// âââ Setting Row âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+interface SettingRowProps {
+  item: SettingItem;
+  isLast: boolean;
+}
+
+const SettingRow: React.FC<SettingRowProps> = React.memo(({ item, isLast }) => {
+  const rowStyle = useMemo(
+    () => [styles.settingRow, !isLast && styles.settingRowBorder],
+    [isLast],
+  );
+
+  const iconContainerStyle = useMemo(
+    () => [styles.settingIconContainer, item.danger && styles.settingIconContainerDanger],
+    [item.danger],
+  );
+
+  const labelStyle = useMemo(
+    () => [styles.settingLabel, item.danger && styles.settingLabelDanger],
+    [item.danger],
+  );
+
+  return (
+    <TouchableOpacity
+      onPress={item.onPress}
+      activeOpacity={0.7}
+      style={rowStyle}
     >
-      {item.icon}
+      <View style={iconContainerStyle}>{item.icon}</View>
+      <Text style={labelStyle}>{item.label}</Text>
+      {item.badge !== undefined && (
+        <View style={styles.badgeContainer}>
+          <Text style={styles.badgeText}>{item.badge}</Text>
+        </View>
+      )}
+      <ChevronRight
+        size={16}
+        color={item.danger ? Theme.danger : Theme.textSecondary}
+      />
+    </TouchableOpacity>
+  );
+});
+
+SettingRow.displayName = 'SettingRow';
+
+// âââ Section Block ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+interface SectionBlockProps {
+  section: SettingSection;
+}
+
+const SectionBlock: React.FC<SectionBlockProps> = React.memo(({ section }) => (
+  <View style={styles.sectionContainer}>
+    <Text style={styles.sectionTitle}>{section.title}</Text>
+    <View style={styles.sectionCard}>
+      {section.items.map((item, index) => (
+        <SettingRow
+          key={item.id}
+          item={item}
+          isLast={index === section.items.length - 1}
+        />
+      ))}
     </View>
-    <Text
-      className={`flex-1 text-sm font-medium ${
-        item.danger ? 'text-red-400' : 'text-[#E8E8F0]'
-      }`}
-    >
-      {item.label}
-    </Text>
-    {item.badge ? (
-      <View className="bg-[#3D8BFF]/20 px-2 py-0.5 rounded-full mr-2">
-        <Text className="text-[#3D8BFF] text-xs font-semibold">{item.badge}</Text>
-      </View>
-    ) : null}
-    <ChevronRight size={16} color={item.danger ? '#F87171' : '#A8A8C0'} />
-  </TouchableOpacity>
-);
+  </View>
+));
 
-// ─── Main Screen ─────────────────────────────────────────────────────────────
+SectionBlock.displayName = 'SectionBlock';
+
+// âââ Hook: useSections âââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+function useSections(
+  navigation: NavigationProp,
+  plan: string,
+  handleLogout: () => void,
+): SettingSection[] {
+  return useMemo(
+    () => [
+      {
+        title: 'Compte',
+        items: [
+          {
+            id: 'account',
+            label: 'Mon compte',
+            icon: <User size={16} color={Theme.textSecondary} />,
+            onPress: () => navigation.navigate('Account'),
+          },
+        ],
+      },
+      {
+        title: 'Abonnement',
+        items: [
+          {
+            id: 'subscription',
+            label: 'Mon abonnement',
+            icon: <CreditCard size={16} color={Theme.accent} />,
+            onPress: () => navigation.navigate('Subscription'),
+            badge: plan !== 'Free' ? plan : undefined,
+          },
+        ],
+      },
+      {
+        title: 'SantÃ©',
+        items: [
+          {
+            id: 'health',
+            label: 'DonnÃ©es de santÃ©',
+            icon: <Heart size={16} color={Theme.danger} />,
+            onPress: () => navigation.navigate('HealthSettings'),
+          },
+        ],
+      },
+      {
+        title: 'Notifications',
+        items: [
+          {
+            id: 'notifications',
+            label: 'Notifications',
+            icon: <Bell size={16} color={Theme.textSecondary} />,
+            onPress: () => navigation.navigate('Notifications'),
+          },
+        ],
+      },
+      {
+        title: 'ConfidentialitÃ©',
+        items: [
+          {
+            id: 'privacy',
+            label: 'DonnÃ©es & confidentialitÃ©',
+            icon: <Shield size={16} color={Theme.textSecondary} />,
+            onPress: () => navigation.navigate('DataPrivacy'),
+          },
+        ],
+      },
+      {
+        title: 'Ã propos',
+        items: [
+          {
+            id: 'about',
+            label: 'Ã propos de VIVE',
+            icon: <Info size={16} color={Theme.textSecondary} />,
+            onPress: () => navigation.navigate('About'),
+          },
+        ],
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [navigation, plan],
+  );
+}
+
+// âââ Main Screen âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 export const SettingsScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
@@ -124,19 +287,19 @@ export const SettingsScreen: React.FC = () => {
 
   const handleLogout = useCallback(() => {
     Alert.alert(
-      'Se déconnecter',
-      'Êtes-vous sûr de vouloir vous déconnecter\ ?',
+      'Se dÃ©connecter',
+      'Ãtes-vous sÃ»r de vouloir vous dÃ©connecter ?',
       [
         { text: 'Annuler', style: 'cancel' },
         {
-          text: 'Déconnecter',
+          text: 'DÃ©connecter',
           style: 'destructive',
           onPress: async () => {
             try {
               await supabase.auth.signOut();
               clearAuth();
-            } catch (error) {
-              Alert.alert('Erreur', 'Impossible de se déconnecter.');
+            } catch {
+              Alert.alert('Erreur', 'Impossible de se dÃ©connecter.');
             }
           },
         },
@@ -144,177 +307,325 @@ export const SettingsScreen: React.FC = () => {
     );
   }, [clearAuth]);
 
-  const sections: SettingSection[] = [
-    {
-      title: 'Compte',
-      items: [
-        {
-          id: 'account',
-          label: 'Mon compte',
-          icon: <User size={16} color="#A8A8C0" />,
-          onPress: () => navigation.navigate('Account'),
-        },
-      ],
-    },
-    {
-      title: 'Abonnement',
-      items: [
-        {
-          id: 'subscription',
-          label: 'Mon abonnement',
-          icon: <CreditCard size={16} color="#3D8BFF" />,
-          onPress: () => navigation.navigate('Subscription'),
-          badge: plan !== 'Free' ? plan : undefined,
-        },
-      ],
-    },
-    {
-      title: 'Santé',
-      items: [
-        {
-          id: 'health',
-          label: 'Données de santé',
-          icon: <Heart size={16} color="#F87171" />,
-          onPress: () => navigation.navigate('HealthSettings'),
-        },
-      ],
-    },
-    {
-      title: 'Notifications',
-      items: [
-        {
-          id: 'notifications',
-          label: 'Notifications',
-          icon: <Bell size={16} color="#A8A8C0" />,
-          onPress: () => navigation.navigate('Notifications'),
-        },
-      ],
-    },
-    {
-      title: 'Confidentialité',
-      items: [
-        {
-          id: 'privacy',
-          label: 'Données & confidentialité',
-          icon: <Shield size={16} color="#A8A8C0" />,
-          onPress: () => navigation.navigate('DataPrivacy'),
-        },
-      ],
-    },
-    {
-      title: 'À propos',
-      items: [
-        {
-          id: 'about',
-          label: 'À propos de VIVE',
-          icon: <Info size={16} color="#A8A8C0" />,
-          onPress: () => navigation.navigate('About'),
-        },
-      ],
-    },
-  ];
+  const currentPlan = plan ?? 'Free';
+  const sections = useSections(navigation, currentPlan, handleLogout);
 
-  const displayName =
-    user?.user_metadata?.full_name ??
-    user?.email?.split('@')[0] ??
-    'Utilisateur';
+  const displayName = useMemo(
+    () =>
+      user?.user_metadata?.full_name ??
+      user?.email?.split('@')[0] ??
+      'Utilisateur',
+    [user],
+  );
 
   const email = user?.email ?? '';
-  const currentPlan = plan ?? 'Free';
-  const APP_VERSION = '1.0.0';
-  const BUILD_NUMBER = '42';
 
-  return (
-    <View
-      className="flex-1 bg-[#080810]"
-      style={{ paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }}
-    >
-      <StatusBar barStyle="light-content" backgroundColor="#080810" />
+  const avatarLetter = useMemo(
+    () => displayName.charAt(0).toUpperCase(),
+    [displayName],
+  );
 
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}
-      >
-        {/* ── Header ──────────────────────────────────────── */}
-        <View className="px-5 pt-6 pb-2">
-          <Text className="text-2xl font-bold text-[#E8E8F0] tracking-tight">
-            Réglages
-          </Text>
+  const contentContainerStyle = useMemo(
+    () => [styles.listContent, { paddingBottom: insets.bottom + 32 }],
+    [insets.bottom],
+  );
+
+  const containerStyle = useMemo(
+    () => [
+      styles.container,
+      Platform.OS === 'android' && { paddingTop: StatusBar.currentHeight ?? 0 },
+    ],
+    [],
+  );
+
+  const renderItem: ListRenderItem<SettingSection> = useCallback(
+    ({ item }) => <SectionBlock section={item} />,
+    [],
+  );
+
+  const keyExtractor = useCallback(
+    (item: SettingSection) => item.title,
+    [],
+  );
+
+  const ListHeaderComponent = useMemo(
+    () => (
+      <>
+        {/* ââ Header ââââââââââââââââââââââââââââââââââââââââ */}
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>RÃ©glages</Text>
         </View>
 
-        {/* ── User Card ───────────────────────────────────── */}
-        <View className="mx-5 mt-4 mb-6 bg-[#1C1C28] rounded-2xl p-4 border border-white/8">
-          <View className="flex-row items-center">
-            {/* Avatar */}
-            <View className="w-14 h-14 rounded-2xl bg-[#3D8BFF]/20 border border-[#3D8BFF]/30 items-center justify-center mr-3">
-              <Text className="text-xl font-bold text-[#3D8BFF]">
-                {displayName.charAt(0).toUpperCase()}
-              </Text>
+        {/* ââ User Card âââââââââââââââââââââââââââââââââââââ */}
+        <View style={styles.userCard}>
+          <View style={styles.userCardInner}>
+            <View style={styles.avatarContainer}>
+              <Text style={styles.avatarText}>{avatarLetter}</Text>
             </View>
-
-            {/* Info */}
-            <View className="flex-1">
-              <Text
-                className="text-base font-semibold text-[#E8E8F0] mb-0.5"
-                numberOfLines={1}
-              >
+            <View style={styles.userInfo}>
+              <Text style={styles.userName} numberOfLines={1}>
                 {displayName}
               </Text>
-              <Text
-                className="text-sm text-[#A8A8C0] mb-1.5"
-                numberOfLines={1}
-              >
+              <Text style={styles.userEmail} numberOfLines={1}>
                 {email}
               </Text>
               <PlanBadge plan={currentPlan} />
             </View>
           </View>
         </View>
+      </>
+    ),
+    [avatarLetter, currentPlan, displayName, email],
+  );
 
-        {/* ── Sections ────────────────────────────────────── */}
-        {sections.map((section) => (
-          <View key={section.title} className="mx-5 mb-4">
-            <Text className="text-xs font-semibold text-[#A8A8C0] uppercase tracking-widest mb-2 px-1">
-              {section.title}
-            </Text>
-            <View className="bg-[#111118] rounded-2xl border border-white/6 overflow-hidden">
-              {section.items.map((item, index) => (
-                <SettingRow
-                  key={item.id}
-                  item={item}
-                  isLast={index === section.items.length - 1}
-                />
-              ))}
-            </View>
-          </View>
-        ))}
-
-        {/* ── Logout ──────────────────────────────────────── */}
-        <View className="mx-5 mt-2">
+  const ListFooterComponent = useMemo(
+    () => (
+      <>
+        {/* ââ Logout ââââââââââââââââââââââââââââââââââââââââ */}
+        <View style={styles.logoutContainer}>
           <TouchableOpacity
             onPress={handleLogout}
             activeOpacity={0.8}
-            className="bg-red-500/10 border border-red-500/25 rounded-2xl py-4 flex-row items-center justify-center gap-2"
+            style={styles.logoutButton}
           >
-            <LogOut size={18} color="#F87171" />
-            <Text className="text-red-400 font-semibold text-sm">
-              Se déconnecter
-            </Text>
+            <LogOut size={18} color={Theme.danger} />
+            <Text style={styles.logoutText}>Se dÃ©connecter</Text>
           </TouchableOpacity>
         </View>
 
-        {/* ── Version ─────────────────────────────────────── */}
-        <View className="items-center mt-8">
-          <Text className="text-[#A8A8C0]/50 text-xs">
+        {/* ââ Version âââââââââââââââââââââââââââââââââââââââ */}
+        <View style={styles.versionContainer}>
+          <Text style={styles.versionText}>
             VIVE v{APP_VERSION} ({BUILD_NUMBER})
           </Text>
-          <Text className="text-[#A8A8C0]/30 text-xs mt-1">
-            Fait avec ♥ pour votre bien-être
+          <Text style={styles.footerText}>
+            Fait avec â¥ pour votre bien-Ãªtre
           </Text>
         </View>
-      </ScrollView>
+      </>
+    ),
+    [handleLogout],
+  );
+
+  return (
+    <View style={containerStyle}>
+      <StatusBar barStyle="light-content" backgroundColor={Theme.bg} />
+      <FlatList<SettingSection>
+        data={sections}
+        keyExtractor={keyExtractor}
+        renderItem={renderItem}
+        ListHeaderComponent={ListHeaderComponent}
+        ListFooterComponent={ListFooterComponent}
+        contentContainerStyle={contentContainerStyle}
+        showsVerticalScrollIndicator={false}
+      />
     </View>
   );
 };
+
+// âââ Styles âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: Theme.bg,
+  },
+  listContent: {
+    flexGrow: 1,
+  },
+  // Header
+  header: {
+    paddingHorizontal: 20,
+    paddingTop: 24,
+    paddingBottom: 8,
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: Theme.textPrimary,
+    letterSpacing: -0.5,
+  },
+  // User Card
+  userCard: {
+    marginHorizontal: 20,
+    marginTop: 16,
+    marginBottom: 24,
+    backgroundColor: Theme.surface,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: Theme.borderStrong,
+  },
+  userCardInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  avatarContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    backgroundColor: Theme.accentBg,
+    borderWidth: 1,
+    borderColor: Theme.accentBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  avatarText: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: Theme.accent,
+  },
+  userInfo: {
+    flex: 1,
+  },
+  userName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Theme.textPrimary,
+    marginBottom: 2,
+  },
+  userEmail: {
+    fontSize: 13,
+    color: Theme.textSecondary,
+    marginBottom: 6,
+  },
+  // Plan Badge
+  planBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+  },
+  planBadgeElite: {
+    backgroundColor: Theme.eliteBg,
+    borderColor: Theme.eliteBorder,
+  },
+  planBadgePremium: {
+    backgroundColor: Theme.premiumBg,
+    borderColor: Theme.premiumBorder,
+  },
+  planBadgeFree: {
+    backgroundColor: Theme.iconBg,
+    borderColor: Theme.borderStrong,
+  },
+  planBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  planBadgeTextElite: {
+    color: Theme.eliteText,
+  },
+  planBadgeTextPremium: {
+    color: Theme.accent,
+  },
+  planBadgeTextFree: {
+    color: Theme.textSecondary,
+  },
+  // Section
+  sectionContainer: {
+    marginHorizontal: 20,
+    marginBottom: 16,
+  },
+  sectionTitle: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Theme.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 1.2,
+    marginBottom: 8,
+    paddingHorizontal: 4,
+  },
+  sectionCard: {
+    backgroundColor: Theme.surfaceAlt,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Theme.borderMedium,
+    overflow: 'hidden',
+  },
+  // Setting Row
+  settingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  settingRowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: Theme.borderSubtle,
+  },
+  settingIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: Theme.iconBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  settingIconContainerDanger: {
+    backgroundColor: Theme.dangerIcon,
+  },
+  settingLabel: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '500',
+    color: Theme.textPrimary,
+  },
+  settingLabelDanger: {
+    color: Theme.danger,
+  },
+  // Badge
+  badgeContainer: {
+    backgroundColor: Theme.badgeBg,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 999,
+    marginRight: 8,
+  },
+  badgeText: {
+    color: Theme.accent,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  // Logout
+  logoutContainer: {
+    marginHorizontal: 20,
+    marginTop: 8,
+  },
+  logoutButton: {
+    backgroundColor: Theme.dangerBg,
+    borderWidth: 1,
+    borderColor: Theme.dangerBorder,
+    borderRadius: 16,
+    paddingVertical: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  logoutText: {
+    color: Theme.danger,
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  // Version
+  versionContainer: {
+    alignItems: 'center',
+    marginTop: 32,
+  },
+  versionText: {
+    color: Theme.versionText,
+    fontSize: 11,
+  },
+  footerText: {
+    color: Theme.footerText,
+    fontSize: 11,
+    marginTop: 4,
+  },
+});
 
 export default SettingsScreen;

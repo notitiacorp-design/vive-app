@@ -1,35 +1,79 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
-  ScrollView,
+  FlatList,
   Animated,
   TouchableOpacity,
   Dimensions,
   StatusBar,
+  StyleSheet,
+  ListRenderItemInfo,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import type { GamificationStackParamList } from '../../navigation/GamificationNavigator';
+import type { RootStackParamList } from '../../navigation/types';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-// âââ Types ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// âââ ThÃ¨me ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
-// GamificationStackParamList est importÃ© depuis GamificationNavigator.tsx.
-// La route 'Settings' est ajoutÃ©e via extension locale pour ce navigateur.
-// Si Settings n'existe pas dans le navigator rÃ©el, on utilise une navigation
-// sÃ©curisÃ©e avec canNavigate guard.
-
-type ExtendedGamificationParamList = GamificationStackParamList & {
-  Settings: undefined;
+const Theme = {
+  colors: {
+    background: '#080810',
+    surface: '#1C1C28',
+    surfaceDeep: '#111118',
+    border: '#2A2A3A',
+    textPrimary: '#E8E8F0',
+    textSecondary: '#A8A8C0',
+    textWhite: '#FFFFFF',
+    accent: '#3D8BFF',
+    accentPurple: '#6B4FBB',
+    accentOrange: '#F5A623',
+    accentGreen: '#27AE60',
+    accentRed: '#E74C3C',
+    levelBadgeBorder: '#080810',
+  },
+  spacing: {
+    xs: 2,
+    sm: 4,
+    md: 8,
+    base: 10,
+    lg: 12,
+    xl: 14,
+    xxl: 16,
+    xxxl: 24,
+    huge: 32,
+  },
+  radius: {
+    sm: 6,
+    md: 8,
+    lg: 12,
+    xl: 14,
+    xxl: 16,
+    avatar: 50,
+    glow: 56,
+    pill: 20,
+  },
+  font: {
+    tiny: 10,
+    xs: 11,
+    sm: 12,
+    base: 13,
+    md: 15,
+    lg: 18,
+    xl: 20,
+    xxl: 22,
+    xxxl: 24,
+    huge: 28,
+    avatar: 44,
+  },
 };
 
-type ProfileScreenNavigationProp = NativeStackNavigationProp<ExtendedGamificationParamList, 'Profile'>;
+// âââ Types ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
-interface ProfileScreenProps {
-  navigation: ProfileScreenNavigationProp;
-}
+type ProfileScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 interface StatCard {
   id: string;
@@ -47,7 +91,7 @@ interface StreakDay {
   completed: boolean;
 }
 
-// âââ Mock Data âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// âââ DonnÃ©es Mock âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 const USER = {
   name: 'Alexandre',
@@ -61,10 +105,10 @@ const USER = {
 };
 
 const STATS: StatCard[] = [
-  { id: 'sleep', label: 'Sleep Score', value: 84, unit: '/100', icon: '\uD83C\uDF19', trend: 'up', trendValue: '+3', color: '#6B4FBB' },
-  { id: 'energy', label: 'Energy', value: 72, unit: '/100', icon: '\u26A1', trend: 'up', trendValue: '+8', color: '#F5A623' },
-  { id: 'recovery', label: 'Recovery', value: 91, unit: '/100', icon: '\uD83D\uDC9A', trend: 'neutral', trendValue: '0', color: '#27AE60' },
-  { id: 'stress', label: 'Stress', value: 34, unit: '/100', icon: '\uD83E\uDDD8', trend: 'down', trendValue: '-12', color: '#3D8BFF' },
+  { id: 'sleep',    label: 'Score Sommeil', value: 84, unit: '/100', icon: 'ð', trend: 'up',      trendValue: '+3',  color: Theme.colors.accentPurple },
+  { id: 'energy',   label: 'Ãnergie',       value: 72, unit: '/100', icon: 'â¡', trend: 'up',      trendValue: '+8',  color: Theme.colors.accentOrange },
+  { id: 'recovery', label: 'RÃ©cupÃ©ration',  value: 91, unit: '/100', icon: 'ð', trend: 'neutral', trendValue: '0',   color: Theme.colors.accentGreen },
+  { id: 'stress',   label: 'Stress',        value: 34, unit: '/100', icon: 'ð§', trend: 'down',    trendValue: '-12', color: Theme.colors.accent },
 ];
 
 const generateStreakDays = (): StreakDay[] => {
@@ -81,303 +125,604 @@ const generateStreakDays = (): StreakDay[] => {
   return days;
 };
 
-const STREAK_DAYS = generateStreakDays();
+const STREAK_DAYS: StreakDay[] = generateStreakDays();
 
-// âââ Sub-components ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// âââ StyleSheet âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
-const AvatarSection: React.FC<{ level: number }> = ({ level }) => (
-  <View style={{ alignItems: 'center', marginTop: 16, marginBottom: 24 }}>
-    <View style={{ position: 'relative' }}>
-      {/* Glow ring */}
-      <View
-        style={{
-          width: 112,
-          height: 112,
-          borderRadius: 56,
-          backgroundColor: '#3D8BFF22',
-          position: 'absolute',
-          top: -6,
-          left: -6,
-        }}
-      />
-      {/* Avatar circle */}
-      <View
-        style={{
-          width: 100,
-          height: 100,
-          borderRadius: 50,
-          backgroundColor: '#1C1C28',
-          borderWidth: 2,
-          borderColor: '#3D8BFF',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <Text style={{ fontSize: 44 }}>{'\uD83E\uDDD1\u200D\uD83D\uDCBB'}</Text>
+const styles = StyleSheet.create({
+  // Root
+  rootContainer: {
+    flex: 1,
+    backgroundColor: Theme.colors.background,
+  },
+  safeArea: {
+    flex: 1,
+  },
+  flatListContent: {
+    paddingBottom: Theme.spacing.huge,
+  },
+
+  // Header
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Theme.spacing.xxl,
+    paddingTop: Theme.spacing.md,
+    paddingBottom: Theme.spacing.sm,
+  },
+  headerTitle: {
+    color: Theme.colors.textPrimary,
+    fontSize: Theme.font.xxxl,
+    fontWeight: '800',
+  },
+  settingsButton: {
+    width: 40,
+    height: 40,
+    borderRadius: Theme.radius.pill,
+    backgroundColor: Theme.colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  settingsIcon: {
+    fontSize: Theme.font.lg,
+  },
+
+  // AvatarSection
+  avatarContainer: {
+    alignItems: 'center',
+    marginTop: Theme.spacing.xxl,
+    marginBottom: Theme.spacing.xxxl,
+  },
+  avatarRelative: {
+    position: 'relative',
+  },
+  avatarGlowRing: {
+    width: 112,
+    height: 112,
+    borderRadius: Theme.radius.glow,
+    backgroundColor: '#3D8BFF22',
+    position: 'absolute',
+    top: -6,
+    left: -6,
+  },
+  avatarCircle: {
+    width: 100,
+    height: 100,
+    borderRadius: Theme.radius.avatar,
+    backgroundColor: Theme.colors.surface,
+    borderWidth: 2,
+    borderColor: Theme.colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarEmoji: {
+    fontSize: Theme.font.avatar,
+  },
+  avatarLevelBadge: {
+    position: 'absolute',
+    bottom: -6,
+    right: -6,
+    backgroundColor: Theme.colors.accent,
+    borderRadius: Theme.radius.md,
+    paddingHorizontal: Theme.spacing.md,
+    paddingVertical: 3,
+    borderWidth: 2,
+    borderColor: Theme.colors.levelBadgeBorder,
+  },
+  avatarLevelText: {
+    color: Theme.colors.textWhite,
+    fontSize: Theme.font.xs,
+    fontWeight: '800',
+  },
+  avatarName: {
+    color: Theme.colors.textPrimary,
+    fontSize: Theme.font.xl,
+    fontWeight: '700',
+    marginTop: Theme.spacing.xxl,
+  },
+  avatarUsername: {
+    color: Theme.colors.textSecondary,
+    fontSize: Theme.font.base,
+    marginTop: Theme.spacing.xs,
+  },
+  avatarMetaRow: {
+    flexDirection: 'row',
+    marginTop: Theme.spacing.md,
+    gap: Theme.spacing.sm,
+    alignItems: 'center',
+  },
+  avatarMetaBadge: {
+    backgroundColor: Theme.colors.surface,
+    borderRadius: Theme.spacing.md,
+    paddingHorizontal: Theme.base,
+    paddingVertical: Theme.spacing.sm,
+  },
+  avatarMetaText: {
+    color: Theme.colors.textSecondary,
+    fontSize: Theme.font.sm,
+  },
+
+  // XPBar
+  xpBarContainer: {
+    backgroundColor: Theme.colors.surface,
+    borderRadius: Theme.radius.xxl,
+    padding: Theme.spacing.xxl,
+    marginHorizontal: Theme.spacing.xxl,
+    marginBottom: Theme.spacing.xxl,
+  },
+  xpBarRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: Theme.base,
+  },
+  xpBarLabelSmall: {
+    color: Theme.colors.textSecondary,
+    fontSize: Theme.font.sm,
+    fontWeight: '600',
+    letterSpacing: 1,
+  },
+  xpBarLevelText: {
+    color: Theme.colors.textPrimary,
+    fontSize: Theme.font.xxl,
+    fontWeight: '800',
+    marginTop: Theme.spacing.xs,
+  },
+  xpBarValueText: {
+    color: Theme.colors.accent,
+    fontSize: Theme.font.md,
+    fontWeight: '700',
+  },
+  xpBarSubText: {
+    color: Theme.colors.textSecondary,
+    fontSize: Theme.font.sm,
+    marginTop: Theme.spacing.xs,
+  },
+  xpBarTrack: {
+    height: 10,
+    backgroundColor: Theme.colors.surfaceDeep,
+    borderRadius: 5,
+    overflow: 'hidden',
+  },
+  xpBarFill: {
+    height: '100%',
+    borderRadius: 5,
+    backgroundColor: Theme.colors.accent,
+  },
+  xpBarProgressText: {
+    color: Theme.colors.textSecondary,
+    fontSize: Theme.font.xs,
+    marginTop: Theme.spacing.sm,
+    textAlign: 'right',
+  },
+
+  // StatsGrid
+  statsGridContainer: {
+    marginHorizontal: Theme.spacing.xxl,
+    marginBottom: Theme.spacing.xxl,
+  },
+  statsSectionLabel: {
+    color: Theme.colors.textSecondary,
+    fontSize: Theme.font.sm,
+    fontWeight: '600',
+    letterSpacing: 1,
+    marginBottom: Theme.spacing.lg,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Theme.base,
+  },
+  statCard: {
+    flex: 1,
+    minWidth: (SCREEN_WIDTH - 52) / 2,
+    maxWidth: (SCREEN_WIDTH - 52) / 2,
+    backgroundColor: Theme.colors.surface,
+    borderRadius: Theme.radius.xl,
+    padding: Theme.spacing.xl,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
+  },
+  statCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  statCardIcon: {
+    fontSize: Theme.font.xxl,
+  },
+  statCardValueBadge: {
+    borderRadius: Theme.spacing.md,
+    paddingHorizontal: Theme.spacing.md,
+    paddingVertical: 3,
+  },
+  statCardValueText: {
+    fontSize: Theme.font.xs,
+    fontWeight: '700',
+  },
+  statCardLabel: {
+    color: Theme.colors.textPrimary,
+    fontSize: Theme.font.md,
+    fontWeight: '700',
+    marginTop: Theme.spacing.md,
+  },
+
+  // TrendIndicator
+  trendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: Theme.spacing.sm,
+  },
+  trendValue: {
+    fontSize: Theme.font.sm,
+    fontWeight: '700',
+  },
+  trendLabel: {
+    color: Theme.colors.textSecondary,
+    fontSize: Theme.font.tiny,
+    marginLeft: Theme.spacing.xs,
+  },
+
+  // StreaksSection
+  streaksContainer: {
+    backgroundColor: Theme.colors.surface,
+    borderRadius: Theme.radius.xxl,
+    marginHorizontal: Theme.spacing.xxl,
+    marginBottom: Theme.spacing.xxl,
+    padding: Theme.spacing.xxl,
+  },
+  streaksSectionLabel: {
+    color: Theme.colors.textSecondary,
+    fontSize: Theme.font.sm,
+    fontWeight: '600',
+    letterSpacing: 1,
+    marginBottom: Theme.spacing.lg,
+  },
+  streaksRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: Theme.spacing.xxl,
+  },
+  streakItem: {
+    alignItems: 'center',
+  },
+  streakEmoji: {
+    fontSize: Theme.font.huge,
+  },
+  streakValue: {
+    color: Theme.colors.textPrimary,
+    fontSize: Theme.font.xxl,
+    fontWeight: '800',
+  },
+  streakLabel: {
+    color: Theme.colors.textSecondary,
+    fontSize: Theme.font.sm,
+  },
+  streakDivider: {
+    width: 1,
+    backgroundColor: Theme.colors.border,
+  },
+  streakCalendarLabel: {
+    color: Theme.colors.textSecondary,
+    fontSize: Theme.font.xs,
+    marginBottom: Theme.spacing.md,
+  },
+  streakDotsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Theme.sm,
+  },
+  streakLegendRow: {
+    flexDirection: 'row',
+    marginTop: Theme.spacing.md,
+    gap: Theme.spacing.lg,
+    alignItems: 'center',
+  },
+  streakLegendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Theme.spacing.sm,
+  },
+  streakLegendText: {
+    color: Theme.colors.textSecondary,
+    fontSize: Theme.font.tiny,
+  },
+  streakDotCompleted: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Theme.colors.accent,
+  },
+  streakDotMissed: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Theme.colors.surfaceDeep,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
+  },
+});
+
+// âââ Sous-composants ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+
+const AvatarSection: React.FC<{ level: number }> = React.memo(({ level }) => (
+  <View style={styles.avatarContainer}>
+    <View style={styles.avatarRelative}>
+      {/* Anneau lumineux */}
+      <View style={styles.avatarGlowRing} />
+      {/* Cercle avatar */}
+      <View style={styles.avatarCircle}>
+        <Text style={styles.avatarEmoji}>{'ð§\u200Dð»'}</Text>
       </View>
-      {/* Level badge */}
-      <View
-        style={{
-          position: 'absolute',
-          bottom: -6,
-          right: -6,
-          backgroundColor: '#3D8BFF',
-          borderRadius: 12,
-          paddingHorizontal: 8,
-          paddingVertical: 3,
-          borderWidth: 2,
-          borderColor: '#080810',
-        }}
-      >
-        <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '800' }}>LVL {level}</Text>
+      {/* Badge niveau */}
+      <View style={styles.avatarLevelBadge}>
+        <Text style={styles.avatarLevelText}>NVL {level}</Text>
       </View>
     </View>
-    <Text style={{ color: '#E8E8F0', fontSize: 20, fontWeight: '700', marginTop: 16 }}>{USER.name}</Text>
-    <Text style={{ color: '#A8A8C0', fontSize: 13, marginTop: 2 }}>{USER.username}</Text>
-    <View style={{ flexDirection: 'row', marginTop: 8, gap: 4, alignItems: 'center' }}>
-      <View style={{ backgroundColor: '#1C1C28', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 }}>
-        <Text style={{ color: '#A8A8C0', fontSize: 12 }}>{'\uD83D\uDDD3'} {USER.joinedDaysAgo} days active</Text>
+    <Text style={styles.avatarName}>{USER.name}</Text>
+    <Text style={styles.avatarUsername}>{USER.username}</Text>
+    <View style={styles.avatarMetaRow}>
+      <View style={styles.avatarMetaBadge}>
+        <Text style={styles.avatarMetaText}>ð {USER.joinedDaysAgo} jours actifs</Text>
       </View>
     </View>
   </View>
-);
+));
 
-const XPBar: React.FC<{ current: number; max: number; level: number }> = ({ current, max, level }) => {
-  const animVal = useRef(new Animated.Value(0)).current;
-  const progress = current / max;
+AvatarSection.displayName = 'AvatarSection';
 
-  useEffect(() => {
-    // DÃ©marrer l'animation et conserver la rÃ©fÃ©rence pour cleanup
-    const animation = Animated.timing(animVal, {
-      toValue: progress,
-      duration: 1200,
-      useNativeDriver: false,
+const XPBar: React.FC<{ current: number; max: number; level: number }> = React.memo(
+  ({ current, max, level }) => {
+    const animVal = useRef(new Animated.Value(0)).current;
+    const progress = current / max;
+
+    useEffect(() => {
+      const animation = Animated.timing(animVal, {
+        toValue: progress,
+        duration: 1200,
+        useNativeDriver: false,
+      });
+      animation.start();
+      return () => {
+        animation.stop();
+      };
+    }, [progress, animVal]);
+
+    const barWidth = animVal.interpolate({
+      inputRange: [0, 1],
+      outputRange: ['0%', '100%'],
     });
 
-    animation.start();
-
-    // Cleanup: stopper l'animation si le composant dÃ©monte
-    return () => {
-      animation.stop();
-    };
-  }, [progress, animVal]);
-
-  const barWidth = animVal.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0%', '100%'],
-  });
-
-  return (
-    <View
-      style={{
-        backgroundColor: '#1C1C28',
-        borderRadius: 16,
-        padding: 16,
-        marginHorizontal: 16,
-        marginBottom: 16,
-      }}
-    >
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 }}>
-        <View>
-          <Text style={{ color: '#A8A8C0', fontSize: 12, fontWeight: '600', letterSpacing: 1 }}>NIVEAU VIVE</Text>
-          <Text style={{ color: '#E8E8F0', fontSize: 22, fontWeight: '800', marginTop: 2 }}>Level {level}</Text>
-        </View>
-        <View style={{ alignItems: 'flex-end' }}>
-          <Text style={{ color: '#3D8BFF', fontSize: 15, fontWeight: '700' }}>{current.toLocaleString()} XP</Text>
-          <Text style={{ color: '#A8A8C0', fontSize: 12, marginTop: 2 }}>/ {max.toLocaleString()} XP</Text>
-        </View>
-      </View>
-      {/* Track */}
-      <View style={{ height: 10, backgroundColor: '#111118', borderRadius: 5, overflow: 'hidden' }}>
-        <Animated.View
-          style={[
-            {
-              height: '100%',
-              borderRadius: 5,
-              backgroundColor: '#3D8BFF',
-            },
-            { width: barWidth },
-          ]}
-        />
-      </View>
-      <Text style={{ color: '#A8A8C0', fontSize: 11, marginTop: 6, textAlign: 'right' }}>
-        {Math.round(progress * 100)}% to Level {level + 1}
-      </Text>
-    </View>
-  );
-};
-
-const TrendIndicator: React.FC<{ trend: StatCard['trend']; value: string; color: string }> = ({ trend, value }) => {
-  const arrow = trend === 'up' ? '\u2191' : trend === 'down' ? '\u2193' : '\u2192';
-  const trendColor = trend === 'up' ? '#27AE60' : trend === 'down' ? '#E74C3C' : '#A8A8C0';
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-      <Text style={{ color: trendColor, fontSize: 12, fontWeight: '700' }}>{arrow} {value}</Text>
-      <Text style={{ color: '#A8A8C0', fontSize: 10, marginLeft: 2 }}>vs last week</Text>
-    </View>
-  );
-};
-
-const StatsGrid: React.FC = () => (
-  <View style={{ marginHorizontal: 16, marginBottom: 16 }}>
-    <Text style={{ color: '#A8A8C0', fontSize: 12, fontWeight: '600', letterSpacing: 1, marginBottom: 12 }}>WEEKLY STATS</Text>
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-      {STATS.map((stat) => (
-        <View
-          key={stat.id}
-          style={{
-            flex: 1,
-            minWidth: (SCREEN_WIDTH - 52) / 2,
-            maxWidth: (SCREEN_WIDTH - 52) / 2,
-            backgroundColor: '#1C1C28',
-            borderRadius: 14,
-            padding: 14,
-            borderWidth: 1,
-            borderColor: '#2A2A3A',
-          }}
-        >
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Text style={{ fontSize: 22 }}>{stat.icon}</Text>
-            <View
-              style={{
-                backgroundColor: stat.color + '22',
-                borderRadius: 8,
-                paddingHorizontal: 8,
-                paddingVertical: 3,
-              }}
-            >
-              <Text style={{ color: stat.color, fontSize: 11, fontWeight: '700' }}>{stat.value}{stat.unit}</Text>
-            </View>
+    return (
+      <View style={styles.xpBarContainer}>
+        <View style={styles.xpBarRow}>
+          <View>
+            <Text style={styles.xpBarLabelSmall}>NIVEAU VIVE</Text>
+            <Text style={styles.xpBarLevelText}>Niveau {level}</Text>
           </View>
-          <Text style={{ color: '#E8E8F0', fontSize: 15, fontWeight: '700', marginTop: 8 }}>{stat.label}</Text>
-          <TrendIndicator trend={stat.trend} value={stat.trendValue} color={stat.color} />
+          <View style={{ alignItems: 'flex-end' }}>
+            <Text style={styles.xpBarValueText}>{current.toLocaleString()} XP</Text>
+            <Text style={styles.xpBarSubText}>/ {max.toLocaleString()} XP</Text>
+          </View>
         </View>
+        <View style={styles.xpBarTrack}>
+          <Animated.View style={[styles.xpBarFill, { width: barWidth }]} />
+        </View>
+        <Text style={styles.xpBarProgressText}>
+          {Math.round(progress * 100)}% vers le niveau {level + 1}
+        </Text>
+      </View>
+    );
+  }
+);
+
+XPBar.displayName = 'XPBar';
+
+const TrendIndicator: React.FC<{
+  trend: StatCard['trend'];
+  value: string;
+}> = React.memo(({ trend, value }) => {
+  const arrow = trend === 'up' ? 'â' : trend === 'down' ? 'â' : 'â';
+  const trendColor =
+    trend === 'up'
+      ? Theme.colors.accentGreen
+      : trend === 'down'
+      ? Theme.colors.accentRed
+      : Theme.colors.textSecondary;
+  return (
+    <View style={styles.trendRow}>
+      <Text style={[styles.trendValue, { color: trendColor }]}>
+        {arrow} {value}
+      </Text>
+      <Text style={styles.trendLabel}>vs semaine derniÃ¨re</Text>
+    </View>
+  );
+});
+
+TrendIndicator.displayName = 'TrendIndicator';
+
+const StatCardItem: React.FC<{ stat: StatCard }> = React.memo(({ stat }) => (
+  <View style={styles.statCard}>
+    <View style={styles.statCardHeader}>
+      <Text style={styles.statCardIcon}>{stat.icon}</Text>
+      <View
+        style={[
+          styles.statCardValueBadge,
+          { backgroundColor: stat.color + '22' },
+        ]}
+      >
+        <Text style={[styles.statCardValueText, { color: stat.color }]}>
+          {stat.value}{stat.unit}
+        </Text>
+      </View>
+    </View>
+    <Text style={styles.statCardLabel}>{stat.label}</Text>
+    <TrendIndicator trend={stat.trend} value={stat.trendValue} />
+  </View>
+));
+
+StatCardItem.displayName = 'StatCardItem';
+
+const StatsGrid: React.FC = React.memo(() => (
+  <View style={styles.statsGridContainer}>
+    <Text style={styles.statsSectionLabel}>STATISTIQUES HEBDOMADAIRES</Text>
+    <View style={styles.statsRow}>
+      {STATS.map((stat) => (
+        <StatCardItem key={stat.id} stat={stat} />
       ))}
     </View>
   </View>
-);
+));
 
-const StreaksSection: React.FC = () => (
+StatsGrid.displayName = 'StatsGrid';
+
+const StreakDot: React.FC<{ day: StreakDay }> = React.memo(({ day }) => (
   <View
     style={{
-      backgroundColor: '#1C1C28',
-      borderRadius: 16,
-      marginHorizontal: 16,
-      marginBottom: 16,
-      padding: 16,
+      width: 12,
+      height: 12,
+      borderRadius: 6,
+      backgroundColor: day.completed
+        ? Theme.colors.accent
+        : Theme.colors.surfaceDeep,
+      borderWidth: 1,
+      borderColor: day.completed ? Theme.colors.accent : Theme.colors.border,
     }}
-  >
-    <Text style={{ color: '#A8A8C0', fontSize: 12, fontWeight: '600', letterSpacing: 1, marginBottom: 12 }}>STREAKS</Text>
-    <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginBottom: 16 }}>
-      <View style={{ alignItems: 'center' }}>
-        <Text style={{ fontSize: 28 }}>{'\uD83D\uDD25'}</Text>
-        <Text style={{ color: '#E8E8F0', fontSize: 22, fontWeight: '800' }}>{USER.currentStreak}</Text>
-        <Text style={{ color: '#A8A8C0', fontSize: 12 }}>Current Streak</Text>
+  />
+));
+
+StreakDot.displayName = 'StreakDot';
+
+const StreaksSection: React.FC = React.memo(() => (
+  <View style={styles.streaksContainer}>
+    <Text style={styles.streaksSectionLabel}>SÃRIES</Text>
+    <View style={styles.streaksRow}>
+      <View style={styles.streakItem}>
+        <Text style={styles.streakEmoji}>ð¥</Text>
+        <Text style={styles.streakValue}>{USER.currentStreak}</Text>
+        <Text style={styles.streakLabel}>SÃ©rie actuelle</Text>
       </View>
-      <View style={{ width: 1, backgroundColor: '#2A2A3A' }} />
-      <View style={{ alignItems: 'center' }}>
-        <Text style={{ fontSize: 28 }}>{'\uD83C\uDFC6'}</Text>
-        <Text style={{ color: '#E8E8F0', fontSize: 22, fontWeight: '800' }}>{USER.bestStreak}</Text>
-        <Text style={{ color: '#A8A8C0', fontSize: 12 }}>Best Streak</Text>
+      <View style={styles.streakDivider} />
+      <View style={styles.streakItem}>
+        <Text style={styles.streakEmoji}>ð</Text>
+        <Text style={styles.streakValue}>{USER.bestStreak}</Text>
+        <Text style={styles.streakLabel}>Meilleure sÃ©rie</Text>
       </View>
     </View>
-    {/* Calendar dots */}
-    <Text style={{ color: '#A8A8C0', fontSize: 11, marginBottom: 8 }}>Last 21 days</Text>
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+    <Text style={styles.streakCalendarLabel}>21 derniers jours</Text>
+    <View style={styles.streakDotsRow}>
       {STREAK_DAYS.map((day) => (
-        <View
-          key={day.date}
-          style={{
-            width: 12,
-            height: 12,
-            borderRadius: 6,
-            backgroundColor: day.completed ? '#3D8BFF' : '#111118',
-            borderWidth: 1,
-            borderColor: day.completed ? '#3D8BFF' : '#2A2A3A',
-          }}
-        />
+        <StreakDot key={day.date} day={day} />
       ))}
     </View>
-    <View style={{ flexDirection: 'row', marginTop: 8, gap: 12, alignItems: 'center' }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#3D8BFF' }} />
-        <Text style={{ color: '#A8A8C0', fontSize: 10 }}>Completed</Text>
+    <View style={styles.streakLegendRow}>
+      <View style={styles.streakLegendItem}>
+        <View style={styles.streakDotCompleted} />
+        <Text style={styles.streakLegendText}>ComplÃ©tÃ©</Text>
       </View>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#111118', borderWidth: 1, borderColor: '#2A2A3A' }} />
-        <Text style={{ color: '#A8A8C0', fontSize: 10 }}>Missed</Text>
+      <View style={styles.streakLegendItem}>
+        <View style={styles.streakDotMissed} />
+        <Text style={styles.streakLegendText}>ManquÃ©</Text>
       </View>
     </View>
   </View>
-);
+));
 
-// âââ Main Screen âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+StreaksSection.displayName = 'StreaksSection';
 
-export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
-  // Navigation sÃ©curisÃ©e vers Settings : on vÃ©rifie que la route est disponible
-  // avant de naviguer pour Ã©viter un crash runtime si Settings n'est pas dans
-  // le navigateur rÃ©el.
-  const handleSettingsPress = () => {
+// âââ Sections FlatList ââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+
+type SectionItem =
+  | { key: 'avatar' }
+  | { key: 'xpbar' }
+  | { key: 'stats' }
+  | { key: 'streaks' };
+
+const SECTIONS: SectionItem[] = [
+  { key: 'avatar' },
+  { key: 'xpbar' },
+  { key: 'stats' },
+  { key: 'streaks' },
+];
+
+// âââ Ãcran principal ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+
+export const ProfileScreen: React.FC = React.memo(() => {
+  const navigation = useNavigation<ProfileScreenNavigationProp>();
+
+  const handleSettingsPress = useCallback(() => {
     const state = navigation.getState();
-    const routeExists =
-      state?.routeNames?.includes('Settings') ?? false;
-
+    const routeExists = state?.routeNames?.includes('Settings') ?? false;
     if (routeExists) {
-      navigation.navigate('Settings');
+      navigation.navigate('Settings' as never);
     } else {
-      // Route non enregistrÃ©e dans le navigator actuel â navigation silencieuse
-      // En production, on pourrait logger ou afficher un feedback utilisateur.
       console.warn(
         '[ProfileScreen] La route "Settings" n\'est pas enregistrÃ©e dans le navigateur actuel. Navigation ignorÃ©e.'
       );
     }
-  };
+  }, [navigation]);
+
+  const xpBarProps = useMemo(
+    () => ({
+      current: USER.currentXP,
+      max: USER.xpToNextLevel,
+      level: USER.level,
+    }),
+    []
+  );
+
+  const renderSection = useCallback(
+    ({ item }: ListRenderItemInfo<SectionItem>) => {
+      switch (item.key) {
+        case 'avatar':
+          return <AvatarSection level={USER.level} />;
+        case 'xpbar':
+          return <XPBar {...xpBarProps} />;
+        case 'stats':
+          return <StatsGrid />;
+        case 'streaks':
+          return <StreaksSection />;
+        default:
+          return null;
+      }
+    },
+    [xpBarProps]
+  );
+
+  const keyExtractor = useCallback((item: SectionItem) => item.key, []);
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#080810' }}>
-      <StatusBar barStyle="light-content" backgroundColor="#080810" />
-      <SafeAreaView style={{ flex: 1 }}>
-        {/* Header */}
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            paddingHorizontal: 16,
-            paddingTop: 8,
-            paddingBottom: 4,
-          }}
-        >
-          <Text style={{ color: '#E8E8F0', fontSize: 24, fontWeight: '800' }}>Profile</Text>
+    <View style={styles.rootContainer}>
+      <StatusBar
+        barStyle="light-content"
+        backgroundColor={Theme.colors.background}
+      />
+      <SafeAreaView style={styles.safeArea}>
+        {/* En-tÃªte */}
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Profil</Text>
           <TouchableOpacity
             onPress={handleSettingsPress}
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: 20,
-              backgroundColor: '#1C1C28',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
+            style={styles.settingsButton}
             accessibilityLabel="Ouvrir les paramÃ¨tres"
             accessibilityRole="button"
           >
-            <Text style={{ fontSize: 18 }}>{'\u2699\uFE0F'}</Text>
+            <Text style={styles.settingsIcon}>âï¸</Text>
           </TouchableOpacity>
         </View>
 
-        <ScrollView
+        <FlatList<SectionItem>
+          data={SECTIONS}
+          keyExtractor={keyExtractor}
+          renderItem={renderSection}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 32 }}
-        >
-          <AvatarSection level={USER.level} />
-          <XPBar current={USER.currentXP} max={USER.xpToNextLevel} level={USER.level} />
-          <StatsGrid />
-          <StreaksSection />
-        </ScrollView>
+          contentContainerStyle={styles.flatListContent}
+        />
       </SafeAreaView>
     </View>
   );
-};
+});
+
+ProfileScreen.displayName = 'ProfileScreen';
 
 export default ProfileScreen;

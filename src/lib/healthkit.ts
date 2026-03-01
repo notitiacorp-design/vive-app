@@ -1,10 +1,10 @@
 /**
  * src/lib/healthkit.ts
- * VIVE App â HealthKit wrapper (iOS only)
+ * VIVE App â Enveloppe HealthKit (iOS uniquement)
  *
- * Provides a clean, typed API over react-native-health.
- * All public functions are no-ops (returning empty/null) on Android so that
- * callers do not need platform guards everywhere.
+ * Fournit une API typÃ©e et propre au-dessus de react-native-health.
+ * Toutes les fonctions publiques sont des no-ops (retournant vide/null) sur Android
+ * afin que les appelants n'aient pas besoin de gardes de plateforme partout.
  *
  * Ce fichier constitue la source de vÃ©ritÃ© unique pour la logique HealthKit.
  * Le hook useHealthKit.ts doit utiliser ces fonctions plutÃ´t que de dupliquer
@@ -19,15 +19,20 @@ import AppleHealthKit, {
 } from 'react-native-health';
 
 // ---------------------------------------------------------------------------
-// Error class
+// Classe d'erreur
 // ---------------------------------------------------------------------------
+
+/**
+ * Erreur spÃ©cifique Ã  HealthKit, contenant un code d'erreur identifiable.
+ */
 export class HealthKitError extends Error {
   public readonly code: string;
+
   constructor(message: string, code = 'HEALTHKIT_ERROR') {
     super(message);
     this.name = 'HealthKitError';
     this.code = code;
-    // Maintains proper prototype chain in transpiled ES5.
+    // Maintient la chaÃ®ne de prototype correcte en ES5 transpilÃ©.
     Object.setPrototypeOf(this, HealthKitError.prototype);
   }
 }
@@ -35,6 +40,10 @@ export class HealthKitError extends Error {
 // ---------------------------------------------------------------------------
 // Permissions
 // ---------------------------------------------------------------------------
+
+/**
+ * DÃ©claration des permissions HealthKit requises par l'application VIVE.
+ */
 export const HEALTHKIT_PERMISSIONS: HealthKitPermissions = {
   permissions: {
     read: [
@@ -58,55 +67,89 @@ export const HEALTHKIT_PERMISSIONS: HealthKitPermissions = {
 };
 
 // ---------------------------------------------------------------------------
-// Return-type interfaces
+// Interfaces de types de retour
 // ---------------------------------------------------------------------------
+
+/**
+ * ReprÃ©sente un Ã©chantillon d'analyse du sommeil provenant de HealthKit.
+ */
 export interface SleepSample {
+  /** Identifiant unique dÃ©rivÃ© de la date de dÃ©but et de la valeur. */
   id: string;
+  /** Date de dÃ©but de l'Ã©chantillon au format ISO 8601. */
   startDate: string;
+  /** Date de fin de l'Ã©chantillon au format ISO 8601. */
   endDate: string;
   /** DurÃ©e en minutes. */
   durationMinutes: number;
-  /** 'INBED' | 'ASLEEP' | 'AWAKE' | 'CORE' | 'DEEP' | 'REM' */
+  /** Phase de sommeil : 'INBED' | 'ASLEEP' | 'AWAKE' | 'CORE' | 'DEEP' | 'REM' */
   value: string;
 }
 
+/**
+ * ReprÃ©sente un Ã©chantillon de frÃ©quence cardiaque provenant de HealthKit.
+ */
 export interface HeartRateSample {
+  /** Date de dÃ©but de l'Ã©chantillon au format ISO 8601. */
   startDate: string;
+  /** Date de fin de l'Ã©chantillon au format ISO 8601. */
   endDate: string;
-  /** Battements par minute. */
+  /** Battements par minute (bpm). */
   value: number;
 }
 
+/**
+ * ReprÃ©sente un Ã©chantillon de variabilitÃ© de la frÃ©quence cardiaque (VFC)
+ * provenant de HealthKit.
+ */
 export interface HRVSample {
+  /** Date de dÃ©but de l'Ã©chantillon au format ISO 8601. */
   startDate: string;
+  /** Date de fin de l'Ã©chantillon au format ISO 8601. */
   endDate: string;
   /** SDNN en millisecondes. */
   value: number;
 }
 
+/**
+ * ReprÃ©sente un Ã©chantillon de nombre de pas provenant de HealthKit.
+ */
 export interface StepSample {
+  /** Date de dÃ©but de l'Ã©chantillon au format ISO 8601. */
   startDate: string;
+  /** Date de fin de l'Ã©chantillon au format ISO 8601. */
   endDate: string;
-  /** Nombre de pas. */
+  /** Nombre de pas enregistrÃ©s sur la pÃ©riode. */
   value: number;
 }
 
 /**
- * Interface sÃ©mantiquement correcte pour les donnÃ©es de calories.
- * Distincte de StepSample pour Ã©viter la confusion entre les types de donnÃ©es.
+ * ReprÃ©sente un Ã©chantillon de calories dÃ©pensÃ©es provenant de HealthKit.
+ * Interface sÃ©mantiquement distincte de StepSample pour Ã©viter toute confusion
+ * entre les types de donnÃ©es (calories â  pas).
  */
 export interface CalorieSample {
+  /** Date de dÃ©but de l'Ã©chantillon au format ISO 8601. */
   startDate: string;
+  /** Date de fin de l'Ã©chantillon au format ISO 8601. */
   endDate: string;
   /** Ãnergie dÃ©pensÃ©e en kilocalories (kcal). */
   value: number;
 }
 
 // ---------------------------------------------------------------------------
-// Internal helpers
+// Helpers internes
 // ---------------------------------------------------------------------------
 
-/** Shared date-range options builder. */
+/**
+ * Construit les options de plage de dates communes aux requÃªtes HealthKit.
+ *
+ * @param start     DÃ©but de la fenÃªtre de requÃªte.
+ * @param end       Fin de la fenÃªtre de requÃªte.
+ * @param limit     Nombre maximum de rÃ©sultats retournÃ©s (dÃ©faut : 1000).
+ * @param ascending Ordre chronologique croissant si vrai (dÃ©faut : true).
+ * @returns         Options formatÃ©es pour react-native-health.
+ */
 function dateRangeOptions(
   start: Date,
   end: Date,
@@ -122,17 +165,26 @@ function dateRangeOptions(
 }
 
 /**
- * Type reprÃ©sentant une erreur HealthKit â peut Ãªtre une chaÃ®ne, un objet,
- * ou null selon le callback natif react-native-health.
+ * Type reprÃ©sentant une erreur de callback HealthKit.
+ * Peut Ãªtre une chaÃ®ne de caractÃ¨res, un objet structurÃ© ou null
+ * selon le type de requÃªte et la version de react-native-health.
  */
 type HealthKitCallbackError = string | object | null;
 
 /**
- * Convertit une erreur de callback HealthKit en message lisible.
+ * Convertit une erreur de callback HealthKit en message lisible par l'humain.
+ * GÃ¨re les cas oÃ¹ l'erreur est null, une chaÃ®ne ou un objet structurÃ©.
+ *
+ * @param err L'erreur brute retournÃ©e par le callback HealthKit.
+ * @returns   Une chaÃ®ne de caractÃ¨res dÃ©crivant l'erreur.
  */
 function formatHealthKitError(err: HealthKitCallbackError): string {
-  if (err === null) return 'Erreur inconnue HealthKit';
-  if (typeof err === 'string') return err;
+  if (err === null) {
+    return 'Erreur inconnue HealthKit';
+  }
+  if (typeof err === 'string') {
+    return err;
+  }
   try {
     return JSON.stringify(err);
   } catch {
@@ -141,9 +193,16 @@ function formatHealthKitError(err: HealthKitCallbackError): string {
 }
 
 /**
- * Safely run a HealthKit query; rejects with a HealthKitError on failure.
- * Le callback err est typÃ© comme 'string | object | null' car HealthKit
- * peut retourner des erreurs sous diffÃ©rentes formes selon le type de requÃªte.
+ * ExÃ©cute une requÃªte HealthKit de faÃ§on sÃ©curisÃ©e via une Promise.
+ * Rejette avec une HealthKitError en cas d'Ã©chec.
+ *
+ * Le paramÃ¨tre err du callback est typÃ© comme 'HealthKitCallbackError'
+ * (string | object | null) car HealthKit peut retourner des erreurs sous
+ * diffÃ©rentes formes selon le type de requÃªte native.
+ *
+ * @param queryFn Fonction de requÃªte HealthKit acceptant options et callback.
+ * @param options Options de la requÃªte (plage de dates, limites, etc.).
+ * @returns       Promesse rÃ©solue avec les rÃ©sultats typÃ©s T.
  */
 function runQuery<T>(
   queryFn: (
@@ -152,7 +211,7 @@ function runQuery<T>(
   ) => void,
   options: HealthInputOptions,
 ): Promise<T> {
-  return new Promise((resolve, reject) => {
+  return new Promise<T>((resolve, reject) => {
     queryFn(options, (err, results) => {
       if (err) {
         reject(new HealthKitError(formatHealthKitError(err)));
@@ -164,20 +223,24 @@ function runQuery<T>(
 }
 
 // ---------------------------------------------------------------------------
-// Public API
+// API publique
 // ---------------------------------------------------------------------------
 
 /**
  * Initialise HealthKit et demande les permissions requises.
- * RÃ©sout `true` lorsque les permissions sont accordÃ©es, `false` sur Android.
+ *
+ * RÃ©sout `true` lorsque les permissions sont accordÃ©es sur iOS.
+ * RÃ©sout `false` immÃ©diatement sur Android sans lever d'erreur.
  * Rejette avec une HealthKitError si l'initialisation HealthKit Ã©choue.
+ *
+ * @returns Promesse rÃ©solue avec un boolÃ©en indiquant le succÃ¨s.
  */
 export function initHealthKit(): Promise<boolean> {
   if (Platform.OS !== 'ios') {
     return Promise.resolve(false);
   }
 
-  return new Promise((resolve, reject) => {
+  return new Promise<boolean>((resolve, reject) => {
     AppleHealthKit.initHealthKit(HEALTHKIT_PERMISSIONS, (error) => {
       if (error) {
         reject(
@@ -199,9 +262,9 @@ export function initHealthKit(): Promise<boolean> {
 /**
  * Interroge les Ã©chantillons d'analyse du sommeil depuis HealthKit.
  *
- * @param start  DÃ©but de la fenÃªtre de requÃªte.
- * @param end    Fin de la fenÃªtre de requÃªte.
- * @returns      Tableau d'Ã©chantillons de sommeil formatÃ©s.
+ * @param start DÃ©but de la fenÃªtre de requÃªte.
+ * @param end   Fin de la fenÃªtre de requÃªte.
+ * @returns     Tableau d'Ã©chantillons de sommeil formatÃ©s, ou tableau vide sur Android.
  */
 export async function querySleepSamples(
   start: Date,
@@ -238,9 +301,9 @@ export async function querySleepSamples(
 /**
  * Interroge les Ã©chantillons de frÃ©quence cardiaque depuis HealthKit.
  *
- * @param start  DÃ©but de la fenÃªtre de requÃªte.
- * @param end    Fin de la fenÃªtre de requÃªte.
- * @returns      Tableau d'Ã©chantillons FC (bpm).
+ * @param start DÃ©but de la fenÃªtre de requÃªte.
+ * @param end   Fin de la fenÃªtre de requÃªte.
+ * @returns     Tableau d'Ã©chantillons FC (bpm), ou tableau vide sur Android.
  */
 export async function queryHeartRate(
   start: Date,
@@ -269,12 +332,12 @@ export async function queryHeartRate(
 }
 
 /**
- * Interroge les Ã©chantillons de variabilitÃ© de la frÃ©quence cardiaque (VFC / SDNN)
- * depuis HealthKit.
+ * Interroge les Ã©chantillons de variabilitÃ© de la frÃ©quence cardiaque
+ * (VFC / SDNN) depuis HealthKit.
  *
- * @param start  DÃ©but de la fenÃªtre de requÃªte.
- * @param end    Fin de la fenÃªtre de requÃªte.
- * @returns      Tableau d'Ã©chantillons VFC (ms SDNN).
+ * @param start DÃ©but de la fenÃªtre de requÃªte.
+ * @param end   Fin de la fenÃªtre de requÃªte.
+ * @returns     Tableau d'Ã©chantillons VFC (ms SDNN), ou tableau vide sur Android.
  */
 export async function queryHRV(
   start: Date,
@@ -306,9 +369,9 @@ export async function queryHRV(
 /**
  * Interroge les Ã©chantillons de nombre de pas depuis HealthKit.
  *
- * @param start  DÃ©but de la fenÃªtre de requÃªte.
- * @param end    Fin de la fenÃªtre de requÃªte.
- * @returns      Tableau d'Ã©chantillons de pas.
+ * @param start DÃ©but de la fenÃªtre de requÃªte.
+ * @param end   Fin de la fenÃªtre de requÃªte.
+ * @returns     Tableau d'Ã©chantillons de pas, ou tableau vide sur Android.
  */
 export async function querySteps(
   start: Date,
@@ -338,12 +401,14 @@ export async function querySteps(
 
 /**
  * Interroge les Ã©chantillons d'Ã©nergie active dÃ©pensÃ©e depuis HealthKit.
- * Retourne des CalorieSample (et non StepSample) pour reflÃ©ter correctement
- * la sÃ©mantique des donnÃ©es de calories.
  *
- * @param start  DÃ©but de la fenÃªtre de requÃªte.
- * @param end    Fin de la fenÃªtre de requÃªte.
- * @returns      Tableau d'Ã©chantillons de calories (kcal).
+ * Retourne des {@link CalorieSample} (et non {@link StepSample}) afin de
+ * reflÃ©ter correctement la sÃ©mantique des donnÃ©es de calories et d'Ã©viter
+ * toute ambiguÃ¯tÃ© de type entre pas et kilocalories.
+ *
+ * @param start DÃ©but de la fenÃªtre de requÃªte.
+ * @param end   Fin de la fenÃªtre de requÃªte.
+ * @returns     Tableau d'Ã©chantillons de calories (kcal), ou tableau vide sur Android.
  */
 export async function queryActiveCalories(
   start: Date,

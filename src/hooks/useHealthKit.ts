@@ -5,16 +5,22 @@
  * All hooks are guarded with Platform.OS === 'ios' checks.
  */
 
-import { useCallback, useEffect } from 'react';
+import { useCallback } from 'react';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useQueryClient, UseQueryResult } from '@tanstack/react-query';
 import AppleHealthKit, {
   HealthKitPermissions,
   HealthValue,
-  HKActivitySummary,
   SleepSample,
 } from 'react-native-health';
+import {
+  fetchSleepSamples,
+  fetchHeartRate,
+  fetchHRV as fetchHRVLib,
+  fetchActivityData,
+  HealthKitError as LibHealthKitError,
+} from '../lib/healthkit';
 
 // ---------------------------------------------------------------------------
 // Constants & Storage Keys
@@ -41,20 +47,32 @@ const PERMISSIONS: HealthKitPermissions = {
 // Error Types
 // ---------------------------------------------------------------------------
 
-export type HealthKitErrorCode =
+/**
+ * Error codes specific to the useHealthKit hook layer.
+ * Note: This is distinct from the HealthKitError in src/lib/healthkit.ts,
+ * which uses a plain string code. UseHealthKitError uses a typed union
+ * (UseHealthKitErrorCode) for richer error discrimination at the hook level.
+ */
+export type UseHealthKitErrorCode =
   | 'NOT_AVAILABLE'
   | 'PERMISSION_DENIED'
   | 'FETCH_FAILED'
   | 'NOT_INITIALIZED'
   | 'PLATFORM_ERROR';
 
-export class HealthKitError extends Error {
-  readonly code: HealthKitErrorCode;
+/**
+ * Hook-level error class for HealthKit operations.
+ * Distinct from LibHealthKitError (src/lib/healthkit.ts) which uses code: string.
+ * This class uses a typed UseHealthKitErrorCode union for precise error handling
+ * in retry logic and UI error states.
+ */
+export class UseHealthKitError extends Error {
+  readonly code: UseHealthKitErrorCode;
   readonly originalError?: unknown;
 
-  constructor(code: HealthKitErrorCode, message: string, originalError?: unknown) {
+  constructor(code: UseHealthKitErrorCode, message: string, originalError?: unknown) {
     super(message);
-    this.name = 'HealthKitError';
+    this.name = 'UseHealthKitError';
     this.code = code;
     this.originalError = originalError;
   }
@@ -113,7 +131,7 @@ let _initPromise: Promise<void> | null = null;
 function ensureInitialized(): Promise<void> {
   if (Platform.OS !== 'ios') {
     return Promise.reject(
-      new HealthKitError('PLATFORM_ERROR', 'HealthKit is only available on iOS'),
+      new UseHealthKitError('PLATFORM_ERROR', 'HealthKit is only available on iOS'),
     );
   }
 
@@ -126,7 +144,7 @@ function ensureInitialized(): Promise<void> {
       if (error) {
         _initPromise = null;
         reject(
-          new HealthKitError(
+          new UseHealthKitError(
             'PERMISSION_DENIED',
             `HealthKit initialization failed: ${error}`,
             error,
@@ -173,188 +191,9 @@ async function setAnchorDate(key: string, date: Date): Promise<void> {
  */
 export async function requestPermissions(): Promise<void> {
   if (Platform.OS !== 'ios') {
-    throw new HealthKitError('PLATFORM_ERROR', 'HealthKit is only available on iOS');
+    throw new UseHealthKitError('PLATFORM_ERROR', 'HealthKit is only available on iOS');
   }
   await ensureInitialized();
-}
-
-// ---------------------------------------------------------------------------
-// Fetch Helpers
-// ---------------------------------------------------------------------------
-
-async function fetchSleepSamples(
-  startDate: Date,
-  endDate: Date,
-): Promise<SleepSampleData[]> {
-  await ensureInitialized();
-
-  return new Promise((resolve, reject) => {
-    const options = {
-      startDate: startDate.toISOString(),
-      endDate: endDate.toISOString(),
-      limit: 0,
-    };
-
-    AppleHealthKit.getSleepSamples(options, (error, results) => {
-      if (error) {
-        reject(
-          new HealthKitError('FETCH_FAILED', `Failed to fetch sleep data: ${error}`, error),
-        );
-        return;
-      }
-
-      const mapped: SleepSampleData[] = (results as SleepSample[]).map((s) => ({
-        startDate: s.startDate,
-        endDate: s.endDate,
-        value: s.value as SleepSampleData['value'],
-        sourceId: (s as any).sourceId ?? '',
-        sourceName: (s as any).sourceName ?? '',
-      }));
-
-      resolve(mapped);
-    });
-  });
-}
-
-async function fetchHeartRate(
-  startDate: Date,
-  endDate: Date,
-): Promise<HeartRateSample[]> {
-  await ensureInitialized();
-
-  return new Promise((resolve, reject) => {
-    const options = {
-      startDate: startDate.toISOString(),
-      endDate: endDate.toISOString(),
-      ascending: true,
-      limit: 0,
-    };
-
-    AppleHealthKit.getHeartRateSamples(options, (error, results) => {
-      if (error) {
-        reject(
-          new HealthKitError(
-            'FETCH_FAILED',
-            `Failed to fetch heart rate data: ${error}`,
-            error,
-          ),
-        );
-        return;
-      }
-
-      const mapped: HeartRateSample[] = (results as HealthValue[]).map((r) => ({
-        startDate: r.startDate,
-        endDate: r.endDate,
-        value: r.value,
-        sourceName: (r as any).sourceName ?? '',
-      }));
-
-      resolve(mapped);
-    });
-  });
-}
-
-async function fetchHRV(startDate: Date, endDate: Date): Promise<HRVSample[]> {
-  await ensureInitialized();
-
-  return new Promise((resolve, reject) => {
-    const options = {
-      startDate: startDate.toISOString(),
-      endDate: endDate.toISOString(),
-      ascending: true,
-      limit: 0,
-    };
-
-    AppleHealthKit.getHeartRateVariabilitySamples(options, (error, results) => {
-      if (error) {
-        reject(
-          new HealthKitError('FETCH_FAILED', `Failed to fetch HRV data: ${error}`, error),
-        );
-        return;
-      }
-
-      const mapped: HRVSample[] = (results as HealthValue[]).map((r) => ({
-        startDate: r.startDate,
-        endDate: r.endDate,
-        value: r.value,
-        sourceName: (r as any).sourceName ?? '',
-      }));
-
-      resolve(mapped);
-    });
-  });
-}
-
-async function fetchActivityData(
-  startDate: Date,
-  endDate: Date,
-): Promise<ActivityData[]> {
-  await ensureInitialized();
-
-  const dayMs = 24 * 60 * 60 * 1000;
-  const days: ActivityData[] = [];
-
-  // Build an array of day-boundary pairs
-  const cursor = new Date(startDate);
-  cursor.setHours(0, 0, 0, 0);
-
-  const promises: Promise<ActivityData>[] = [];
-
-  while (cursor <= endDate) {
-    const dayStart = new Date(cursor);
-    const dayEnd = new Date(cursor.getTime() + dayMs - 1);
-    const dateStr = dayStart.toISOString().split('T')[0];
-
-    promises.push(
-      new Promise<ActivityData>((resolve) => {
-        const stepOptions = {
-          date: dayStart.toISOString(),
-          includeManuallyAdded: false,
-        };
-
-        const calOptions = {
-          startDate: dayStart.toISOString(),
-          endDate: dayEnd.toISOString(),
-        };
-
-        let steps = 0;
-        let calories = 0;
-        let activeMinutes = 0;
-        let pending = 3;
-
-        const tryResolve = () => {
-          pending -= 1;
-          if (pending === 0) {
-            resolve({ steps, activeCalories: calories, activeMinutes, date: dateStr });
-          }
-        };
-
-        AppleHealthKit.getStepCount(stepOptions, (_err, result) => {
-          steps = result?.value ?? 0;
-          tryResolve();
-        });
-
-        AppleHealthKit.getActiveEnergyBurned(calOptions, (_err, results) => {
-          calories = Array.isArray(results)
-            ? results.reduce((sum, r) => sum + (r.value ?? 0), 0)
-            : 0;
-          tryResolve();
-        });
-
-        AppleHealthKit.getAppleExerciseTime(calOptions, (_err, results) => {
-          activeMinutes = Array.isArray(results)
-            ? results.reduce((sum, r) => sum + (r.value ?? 0), 0)
-            : 0;
-          tryResolve();
-        });
-      }),
-    );
-
-    cursor.setTime(cursor.getTime() + dayMs);
-  }
-
-  const results = await Promise.all(promises);
-  return results;
 }
 
 // ---------------------------------------------------------------------------
@@ -391,6 +230,17 @@ export function registerBackgroundFetchAsync(
 }
 
 // ---------------------------------------------------------------------------
+// Retry helper
+// ---------------------------------------------------------------------------
+
+function shouldRetry(failureCount: number, error: UseHealthKitError): boolean {
+  if (error.code === 'PERMISSION_DENIED' || error.code === 'PLATFORM_ERROR') {
+    return false;
+  }
+  return failureCount < 2;
+}
+
+// ---------------------------------------------------------------------------
 // React Query Hooks
 // ---------------------------------------------------------------------------
 
@@ -400,20 +250,36 @@ export function registerBackgroundFetchAsync(
  * @param startDate - Start of the query window
  * @param endDate - End of the query window
  * @param options - Optional incremental query options
+ *
+ * @note The `startDate` and `endDate` parameters MUST be stable references
+ * (e.g. produced by `useMemo`) to avoid triggering infinite re-fetch loops.
+ * Each render that passes a `new Date()` inline will produce a new ISO string
+ * in the query key, causing React Query to treat it as a new query.
+ *
+ * @example
+ * // Correct â memoised dates
+ * const startDate = useMemo(() => subDays(new Date(), 7), []);
+ * const endDate = useMemo(() => new Date(), []);
+ * const { data } = useSleepData(startDate, endDate);
+ *
+ * // Incorrect â new Date() on every render triggers infinite refetches
+ * const { data } = useSleepData(new Date(Date.now() - 7 * 86400000), new Date());
  */
 export function useSleepData(
   startDate: Date,
   endDate: Date,
   options: { enabled?: boolean; useIncremental?: boolean } = {},
-): UseQueryResult<SleepSampleData[], HealthKitError> {
+): UseQueryResult<SleepSampleData[], UseHealthKitError> {
   const { enabled = true, useIncremental = false } = options;
 
-  return useQuery<SleepSampleData[], HealthKitError>({
+  return useQuery<SleepSampleData[], UseHealthKitError>({
     queryKey: ['healthkit', 'sleep', startDate.toISOString(), endDate.toISOString()],
     queryFn: async () => {
       if (Platform.OS !== 'ios') {
-        throw new HealthKitError('PLATFORM_ERROR', 'HealthKit is only available on iOS');
+        throw new UseHealthKitError('PLATFORM_ERROR', 'HealthKit is only available on iOS');
       }
+
+      await ensureInitialized();
 
       let effectiveStart = startDate;
 
@@ -424,23 +290,29 @@ export function useSleepData(
         }
       }
 
-      const data = await fetchSleepSamples(effectiveStart, endDate);
+      try {
+        const data = await fetchSleepSamples(effectiveStart, endDate);
 
-      if (useIncremental && data.length > 0) {
-        await setAnchorDate('sleep', endDate);
+        if (useIncremental && data.length > 0) {
+          await setAnchorDate('sleep', endDate);
+        }
+
+        return data as SleepSampleData[];
+      } catch (err) {
+        if (err instanceof LibHealthKitError) {
+          throw new UseHealthKitError(
+            'FETCH_FAILED',
+            err.message,
+            err,
+          );
+        }
+        throw new UseHealthKitError('FETCH_FAILED', `Failed to fetch sleep data: ${err}`, err);
       }
-
-      return data;
     },
     enabled: enabled && Platform.OS === 'ios',
     staleTime: 5 * 60 * 1000, // 5 minutes
     gcTime: 30 * 60 * 1000, // 30 minutes
-    retry: (failureCount, error) => {
-      if (error.code === 'PERMISSION_DENIED' || error.code === 'PLATFORM_ERROR') {
-        return false;
-      }
-      return failureCount < 2;
-    },
+    retry: shouldRetry,
   });
 }
 
@@ -449,31 +321,53 @@ export function useSleepData(
  *
  * @param startDate - Start of the query window
  * @param endDate - End of the query window
+ * @param options - Optional query options
+ *
+ * @note The `startDate` and `endDate` parameters MUST be stable references
+ * (e.g. produced by `useMemo`) to avoid triggering infinite re-fetch loops.
+ * Each render that passes a `new Date()` inline will produce a new ISO string
+ * in the query key, causing React Query to treat it as a new query.
+ *
+ * @example
+ * // Correct â memoised dates
+ * const startDate = useMemo(() => subDays(new Date(), 1), []);
+ * const endDate = useMemo(() => new Date(), []);
+ * const { data } = useHeartRate(startDate, endDate);
  */
 export function useHeartRate(
   startDate: Date,
   endDate: Date,
   options: { enabled?: boolean } = {},
-): UseQueryResult<HeartRateSample[], HealthKitError> {
+): UseQueryResult<HeartRateSample[], UseHealthKitError> {
   const { enabled = true } = options;
 
-  return useQuery<HeartRateSample[], HealthKitError>({
+  return useQuery<HeartRateSample[], UseHealthKitError>({
     queryKey: ['healthkit', 'heartRate', startDate.toISOString(), endDate.toISOString()],
     queryFn: async () => {
       if (Platform.OS !== 'ios') {
-        throw new HealthKitError('PLATFORM_ERROR', 'HealthKit is only available on iOS');
+        throw new UseHealthKitError('PLATFORM_ERROR', 'HealthKit is only available on iOS');
       }
-      return fetchHeartRate(startDate, endDate);
+
+      await ensureInitialized();
+
+      try {
+        const data = await fetchHeartRate(startDate, endDate);
+        return data as HeartRateSample[];
+      } catch (err) {
+        if (err instanceof LibHealthKitError) {
+          throw new UseHealthKitError('FETCH_FAILED', err.message, err);
+        }
+        throw new UseHealthKitError(
+          'FETCH_FAILED',
+          `Failed to fetch heart rate data: ${err}`,
+          err,
+        );
+      }
     },
     enabled: enabled && Platform.OS === 'ios',
     staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
-    retry: (failureCount, error) => {
-      if (error.code === 'PERMISSION_DENIED' || error.code === 'PLATFORM_ERROR') {
-        return false;
-      }
-      return failureCount < 2;
-    },
+    retry: shouldRetry,
   });
 }
 
@@ -482,20 +376,34 @@ export function useHeartRate(
  *
  * @param startDate - Start of the query window
  * @param endDate - End of the query window
+ * @param options - Optional incremental query options
+ *
+ * @note The `startDate` and `endDate` parameters MUST be stable references
+ * (e.g. produced by `useMemo`) to avoid triggering infinite re-fetch loops.
+ * Each render that passes a `new Date()` inline will produce a new ISO string
+ * in the query key, causing React Query to treat it as a new query.
+ *
+ * @example
+ * // Correct â memoised dates
+ * const startDate = useMemo(() => subDays(new Date(), 7), []);
+ * const endDate = useMemo(() => new Date(), []);
+ * const { data } = useHRV(startDate, endDate);
  */
 export function useHRV(
   startDate: Date,
   endDate: Date,
   options: { enabled?: boolean; useIncremental?: boolean } = {},
-): UseQueryResult<HRVSample[], HealthKitError> {
+): UseQueryResult<HRVSample[], UseHealthKitError> {
   const { enabled = true, useIncremental = false } = options;
 
-  return useQuery<HRVSample[], HealthKitError>({
+  return useQuery<HRVSample[], UseHealthKitError>({
     queryKey: ['healthkit', 'hrv', startDate.toISOString(), endDate.toISOString()],
     queryFn: async () => {
       if (Platform.OS !== 'ios') {
-        throw new HealthKitError('PLATFORM_ERROR', 'HealthKit is only available on iOS');
+        throw new UseHealthKitError('PLATFORM_ERROR', 'HealthKit is only available on iOS');
       }
+
+      await ensureInitialized();
 
       let effectiveStart = startDate;
 
@@ -506,23 +414,25 @@ export function useHRV(
         }
       }
 
-      const data = await fetchHRV(effectiveStart, endDate);
+      try {
+        const data = await fetchHRVLib(effectiveStart, endDate);
 
-      if (useIncremental && data.length > 0) {
-        await setAnchorDate('hrv', endDate);
+        if (useIncremental && data.length > 0) {
+          await setAnchorDate('hrv', endDate);
+        }
+
+        return data as HRVSample[];
+      } catch (err) {
+        if (err instanceof LibHealthKitError) {
+          throw new UseHealthKitError('FETCH_FAILED', err.message, err);
+        }
+        throw new UseHealthKitError('FETCH_FAILED', `Failed to fetch HRV data: ${err}`, err);
       }
-
-      return data;
     },
     enabled: enabled && Platform.OS === 'ios',
     staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
-    retry: (failureCount, error) => {
-      if (error.code === 'PERMISSION_DENIED' || error.code === 'PLATFORM_ERROR') {
-        return false;
-      }
-      return failureCount < 2;
-    },
+    retry: shouldRetry,
   });
 }
 
@@ -531,31 +441,53 @@ export function useHRV(
  *
  * @param startDate - Start of the query window
  * @param endDate - End of the query window
+ * @param options - Optional query options
+ *
+ * @note The `startDate` and `endDate` parameters MUST be stable references
+ * (e.g. produced by `useMemo`) to avoid triggering infinite re-fetch loops.
+ * Each render that passes a `new Date()` inline will produce a new ISO string
+ * in the query key, causing React Query to treat it as a new query.
+ *
+ * @example
+ * // Correct â memoised dates
+ * const startDate = useMemo(() => subDays(new Date(), 7), []);
+ * const endDate = useMemo(() => new Date(), []);
+ * const { data } = useActivityData(startDate, endDate);
  */
 export function useActivityData(
   startDate: Date,
   endDate: Date,
   options: { enabled?: boolean } = {},
-): UseQueryResult<ActivityData[], HealthKitError> {
+): UseQueryResult<ActivityData[], UseHealthKitError> {
   const { enabled = true } = options;
 
-  return useQuery<ActivityData[], HealthKitError>({
+  return useQuery<ActivityData[], UseHealthKitError>({
     queryKey: ['healthkit', 'activity', startDate.toISOString(), endDate.toISOString()],
     queryFn: async () => {
       if (Platform.OS !== 'ios') {
-        throw new HealthKitError('PLATFORM_ERROR', 'HealthKit is only available on iOS');
+        throw new UseHealthKitError('PLATFORM_ERROR', 'HealthKit is only available on iOS');
       }
-      return fetchActivityData(startDate, endDate);
+
+      await ensureInitialized();
+
+      try {
+        const data = await fetchActivityData(startDate, endDate);
+        return data as ActivityData[];
+      } catch (err) {
+        if (err instanceof LibHealthKitError) {
+          throw new UseHealthKitError('FETCH_FAILED', err.message, err);
+        }
+        throw new UseHealthKitError(
+          'FETCH_FAILED',
+          `Failed to fetch activity data: ${err}`,
+          err,
+        );
+      }
     },
     enabled: enabled && Platform.OS === 'ios',
     staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
-    retry: (failureCount, error) => {
-      if (error.code === 'PERMISSION_DENIED' || error.code === 'PLATFORM_ERROR') {
-        return false;
-      }
-      return failureCount < 2;
-    },
+    retry: shouldRetry,
   });
 }
 

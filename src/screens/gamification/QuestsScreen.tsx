@@ -3,17 +3,17 @@ import {
   View,
   Text,
   FlatList,
+  ScrollView,
   TouchableOpacity,
   Animated,
   Dimensions,
   StatusBar,
-  SectionList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// âââ Types âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 type QuestCategory = 'All' | 'Sleep' | 'Nutrition' | 'Movement' | 'Mental';
 
@@ -41,7 +41,7 @@ interface BossFight {
   reward: number;
 }
 
-// ─── Mock Data ────────────────────────────────────────────────────────────────
+// âââ Mock Data ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 const QUESTS: Quest[] = [
   {
@@ -53,7 +53,7 @@ const QUESTS: Quest[] = [
     total: 10,
     xpReward: 500,
     daysRemaining: 7,
-    icon: '🌙',
+    icon: '\uD83C\uDF19',
     color: '#6B4FBB',
   },
   {
@@ -65,7 +65,7 @@ const QUESTS: Quest[] = [
     total: 14,
     xpReward: 350,
     daysRemaining: 5,
-    icon: '💧',
+    icon: '\uD83D\uDCA7',
     color: '#3D8BFF',
   },
   {
@@ -77,7 +77,7 @@ const QUESTS: Quest[] = [
     total: 12,
     xpReward: 600,
     daysRemaining: 9,
-    icon: '🏃',
+    icon: '\uD83C\uDFC3',
     color: '#27AE60',
   },
   {
@@ -89,7 +89,7 @@ const QUESTS: Quest[] = [
     total: 14,
     xpReward: 400,
     daysRemaining: 3,
-    icon: '🧘',
+    icon: '\uD83E\uDDD8',
     color: '#F5A623',
   },
   {
@@ -101,7 +101,7 @@ const QUESTS: Quest[] = [
     total: 7,
     xpReward: 700,
     daysRemaining: 11,
-    icon: '😴',
+    icon: '\uD83D\uDE34',
     color: '#6B4FBB',
   },
   {
@@ -113,14 +113,14 @@ const QUESTS: Quest[] = [
     total: 10,
     xpReward: 450,
     daysRemaining: 8,
-    icon: '🥗',
+    icon: '\uD83E\uDD57',
     color: '#27AE60',
   },
 ];
 
 const BOSS: BossFight = {
   name: 'Le Titan du Stress',
-  description: 'Défaites le boss mensuel en maintenant un niveau de stress bas durant tout le mois.',
+  description: 'D\u00E9faites le boss mensuel en maintenant un niveau de stress bas durant tout le mois.',
   hp: 4200,
   maxHp: 10000,
   damageDealt: 840,
@@ -132,14 +132,14 @@ const BOSS: BossFight = {
 const CATEGORIES: QuestCategory[] = ['All', 'Sleep', 'Nutrition', 'Movement', 'Mental'];
 
 const CATEGORY_ICONS: Record<QuestCategory, string> = {
-  All: '✨',
-  Sleep: '🌙',
-  Nutrition: '🥗',
-  Movement: '🏃',
-  Mental: '🧘',
+  All: '\u2728',
+  Sleep: '\uD83C\uDF19',
+  Nutrition: '\uD83E\uDD57',
+  Movement: '\uD83C\uDFC3',
+  Mental: '\uD83E\uDDD8',
 };
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+// âââ Sub-components âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 const AnimatedProgressBar: React.FC<{ progress: number; color: string; height?: number }> = ({
   progress,
@@ -248,7 +248,9 @@ const QuestCard: React.FC<{ quest: Quest }> = ({ quest }) => {
         >
           <Text style={{ color: quest.color, fontSize: 11, fontWeight: '600' }}>{quest.category}</Text>
         </View>
-        <Text style={{ color: '#A8A8C0', fontSize: 12 }}>⏳ {quest.daysRemaining}d left</Text>
+        <Text style={{ color: '#A8A8C0', fontSize: 12 }}>
+          \u23F3 {quest.daysRemaining}d left
+        </Text>
       </View>
     </View>
   );
@@ -300,14 +302,18 @@ const BossFightCard: React.FC<{ boss: BossFight }> = ({ boss }) => {
               marginRight: 10,
             }}
           >
-            <Text style={{ color: '#E74C3C', fontSize: 11, fontWeight: '800', letterSpacing: 1 }}>⚔️ BOSS MENSUEL</Text>
+            <Text style={{ color: '#E74C3C', fontSize: 11, fontWeight: '800', letterSpacing: 1 }}>
+              \u2694\uFE0F BOSS MENSUEL
+            </Text>
           </View>
-          <Text style={{ color: '#A8A8C0', fontSize: 12 }}>⏳ {boss.daysLeft} jours restants</Text>
+          <Text style={{ color: '#A8A8C0', fontSize: 12 }}>
+            \u23F3 {boss.daysLeft} jours restants
+          </Text>
         </View>
 
         {/* Boss title */}
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-          <Text style={{ fontSize: 40, marginRight: 14 }}>👹</Text>
+          <Text style={{ fontSize: 40, marginRight: 14 }}>\uD83D\uDC79</Text>
           <View style={{ flex: 1 }}>
             <Text style={{ color: '#E8E8F0', fontSize: 20, fontWeight: '800' }}>{boss.name}</Text>
             <Text style={{ color: '#A8A8C0', fontSize: 12, marginTop: 4, lineHeight: 17 }}>
@@ -319,7 +325,9 @@ const BossFightCard: React.FC<{ boss: BossFight }> = ({ boss }) => {
         {/* HP Bar */}
         <View style={{ marginBottom: 10 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
-            <Text style={{ color: '#E8E8F0', fontSize: 13, fontWeight: '700' }}>❤️ Boss HP</Text>
+            <Text style={{ color: '#E8E8F0', fontSize: 13, fontWeight: '700' }}>
+              \u2764\uFE0F Boss HP
+            </Text>
             <Text style={{ color: '#E74C3C', fontSize: 13, fontWeight: '700' }}>
               {boss.hp.toLocaleString()} / {boss.maxHp.toLocaleString()}
             </Text>
@@ -349,7 +357,9 @@ const BossFightCard: React.FC<{ boss: BossFight }> = ({ boss }) => {
               alignItems: 'center',
             }}
           >
-            <Text style={{ color: '#F5A623', fontSize: 16, fontWeight: '800' }}>💥 {boss.damageDealt}</Text>
+            <Text style={{ color: '#F5A623', fontSize: 16, fontWeight: '800' }}>
+              \uD83D\uDCA5 {boss.damageDealt}
+            </Text>
             <Text style={{ color: '#A8A8C0', fontSize: 11, marginTop: 2 }}>Your Damage</Text>
           </View>
           <View
@@ -361,7 +371,9 @@ const BossFightCard: React.FC<{ boss: BossFight }> = ({ boss }) => {
               alignItems: 'center',
             }}
           >
-            <Text style={{ color: '#3D8BFF', fontSize: 16, fontWeight: '800' }}>👥 {boss.participants.toLocaleString()}</Text>
+            <Text style={{ color: '#3D8BFF', fontSize: 16, fontWeight: '800' }}>
+              \uD83D\uDC65 {boss.participants.toLocaleString()}
+            </Text>
             <Text style={{ color: '#A8A8C0', fontSize: 11, marginTop: 2 }}>Raiders</Text>
           </View>
           <View
@@ -373,7 +385,9 @@ const BossFightCard: React.FC<{ boss: BossFight }> = ({ boss }) => {
               alignItems: 'center',
             }}
           >
-            <Text style={{ color: '#27AE60', fontSize: 16, fontWeight: '800' }}>✨ {boss.reward}</Text>
+            <Text style={{ color: '#27AE60', fontSize: 16, fontWeight: '800' }}>
+              \u2728 {boss.reward}
+            </Text>
             <Text style={{ color: '#A8A8C0', fontSize: 11, marginTop: 2 }}>XP Reward</Text>
           </View>
         </View>
@@ -382,20 +396,22 @@ const BossFightCard: React.FC<{ boss: BossFight }> = ({ boss }) => {
   );
 };
 
+// CategoryTabs uses ScrollView instead of FlatList to avoid nested FlatList conflict
 const CategoryTabs: React.FC<{
   selected: QuestCategory;
   onSelect: (c: QuestCategory) => void;
 }> = ({ selected, onSelect }) => (
-  <FlatList
+  <ScrollView
     horizontal
     showsHorizontalScrollIndicator={false}
-    data={CATEGORIES}
-    keyExtractor={(item) => item}
     contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 12, gap: 8 }}
-    renderItem={({ item }) => {
+    keyboardShouldPersistTaps="handled"
+  >
+    {CATEGORIES.map((item) => {
       const isActive = item === selected;
       return (
         <TouchableOpacity
+          key={item}
           onPress={() => onSelect(item)}
           style={{
             flexDirection: 'row',
@@ -421,11 +437,20 @@ const CategoryTabs: React.FC<{
           </Text>
         </TouchableOpacity>
       );
-    }}
-  />
+    })}
+  </ScrollView>
 );
 
-// ─── Main Screen ──────────────────────────────────────────────────────────────
+// âââ List item types ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+
+type ListItemBossHeader = { type: 'bossHeader' };
+type ListItemBoss = { type: 'boss'; data: BossFight };
+type ListItemQuestHeader = { type: 'questHeader'; label: string };
+type ListItemQuest = { type: 'quest'; data: Quest };
+
+type ListItem = ListItemBossHeader | ListItemBoss | ListItemQuestHeader | ListItemQuest;
+
+// âââ Main Screen ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 export const QuestsScreen: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<QuestCategory>('All');
@@ -433,11 +458,67 @@ export const QuestsScreen: React.FC = () => {
   const filteredQuests =
     selectedCategory === 'All' ? QUESTS : QUESTS.filter((q) => q.category === selectedCategory);
 
-  const sections = [
-    { title: 'boss', data: [BOSS] as any[] },
-    { title: 'header', data: [] as any[] },
-    ...filteredQuests.map((q) => ({ title: q.id, data: [q] })),
-  ];
+  // Build a flat list of typed items â renderItem always returns the same component shape
+  const listData: ListItem[] = [];
+
+  if (selectedCategory === 'All') {
+    listData.push({ type: 'bossHeader' });
+    listData.push({ type: 'boss', data: BOSS });
+  }
+
+  listData.push({
+    type: 'questHeader',
+    label:
+      selectedCategory === 'All'
+        ? '\uD83D\uDCCB QU\u00CATES ACTIVES (14 JOURS)'
+        : `${CATEGORY_ICONS[selectedCategory]} QU\u00CATES ${selectedCategory.toUpperCase()}`,
+  });
+
+  filteredQuests.forEach((q) => {
+    listData.push({ type: 'quest', data: q });
+  });
+
+  const renderItem = ({ item }: { item: ListItem }) => {
+    switch (item.type) {
+      case 'bossHeader':
+        return (
+          <View style={{ paddingHorizontal: 16, marginBottom: 10, marginTop: 4 }}>
+            <Text style={{ color: '#A8A8C0', fontSize: 12, fontWeight: '600', letterSpacing: 1 }}>
+              \u2694\uFE0F BOSS DU MOIS
+            </Text>
+          </View>
+        );
+      case 'boss':
+        return <BossFightCard boss={item.data} />;
+      case 'questHeader':
+        return (
+          <View style={{ paddingHorizontal: 16, marginTop: 16, marginBottom: 10 }}>
+            <Text style={{ color: '#A8A8C0', fontSize: 12, fontWeight: '600', letterSpacing: 1 }}>
+              {item.label}
+            </Text>
+          </View>
+        );
+      case 'quest':
+        return <QuestCard quest={item.data} />;
+      default:
+        return null;
+    }
+  };
+
+  const keyExtractor = (item: ListItem, index: number): string => {
+    switch (item.type) {
+      case 'bossHeader':
+        return 'boss-header';
+      case 'boss':
+        return 'boss';
+      case 'questHeader':
+        return 'quest-header';
+      case 'quest':
+        return item.data.id;
+      default:
+        return String(index);
+    }
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: '#080810' }}>
@@ -445,49 +526,23 @@ export const QuestsScreen: React.FC = () => {
       <SafeAreaView style={{ flex: 1 }}>
         {/* Header */}
         <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12 }}>
-          <Text style={{ color: '#E8E8F0', fontSize: 24, fontWeight: '800' }}>Quêtes</Text>
+          <Text style={{ color: '#E8E8F0', fontSize: 24, fontWeight: '800' }}>Qu\u00EAtes</Text>
           <Text style={{ color: '#A8A8C0', fontSize: 13, marginTop: 2 }}>
-            {filteredQuests.length} quête{filteredQuests.length !== 1 ? 's' : ''} active{filteredQuests.length !== 1 ? 's' : ''}
+            {filteredQuests.length} qu\u00EAte{filteredQuests.length !== 1 ? 's' : ''} active
+            {filteredQuests.length !== 1 ? 's' : ''}
           </Text>
         </View>
 
-        {/* Category Tabs */}
+        {/* Category Tabs â uses ScrollView, not FlatList, to avoid nested FlatList conflicts */}
         <CategoryTabs selected={selectedCategory} onSelect={setSelectedCategory} />
 
-        {/* List */}
-        <FlatList
-          data={['boss', ...filteredQuests.map((q) => q.id)]}
-          keyExtractor={(item) => item}
+        {/* Main list â single FlatList with typed items, renderItem always returns same shape */}
+        <FlatList<ListItem>
+          data={listData}
+          keyExtractor={keyExtractor}
+          renderItem={renderItem}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 32, paddingTop: 4 }}
-          ListHeaderComponent={
-            <>
-              {selectedCategory === 'All' && (
-                <>
-                  <View style={{ paddingHorizontal: 16, marginBottom: 10 }}>
-                    <Text style={{ color: '#A8A8C0', fontSize: 12, fontWeight: '600', letterSpacing: 1 }}>⚔️ BOSS DU MOIS</Text>
-                  </View>
-                  <BossFightCard boss={BOSS} />
-                  <View style={{ paddingHorizontal: 16, marginTop: 16, marginBottom: 10 }}>
-                    <Text style={{ color: '#A8A8C0', fontSize: 12, fontWeight: '600', letterSpacing: 1 }}>📋 QUÊTES ACTIVES (14 JOURS)</Text>
-                  </View>
-                </>
-              )}
-              {selectedCategory !== 'All' && (
-                <View style={{ paddingHorizontal: 16, marginBottom: 10 }}>
-                  <Text style={{ color: '#A8A8C0', fontSize: 12, fontWeight: '600', letterSpacing: 1 }}>
-                    {CATEGORY_ICONS[selectedCategory]} QUÊTES {selectedCategory.toUpperCase()}
-                  </Text>
-                </View>
-              )}
-            </>
-          }
-          renderItem={({ item }) => {
-            if (item === 'boss') return null;
-            const quest = QUESTS.find((q) => q.id === item);
-            if (!quest) return null;
-            return <QuestCard quest={quest} />;
-          }}
+          contentContainerStyle={{ paddingBottom: 32 }}
         />
       </SafeAreaView>
     </View>

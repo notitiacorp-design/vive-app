@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,21 +7,25 @@ import {
   TouchableOpacity,
   Dimensions,
   StatusBar,
-  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { GamificationStackParamList } from '../../navigation/GamificationNavigator';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-// ─── Types ──────────────────────────────────────────────────────────────────
+// âââ Types ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
-type RootStackParamList = {
-  Profile: undefined;
+// GamificationStackParamList est importÃ© depuis GamificationNavigator.tsx.
+// La route 'Settings' est ajoutÃ©e via extension locale pour ce navigateur.
+// Si Settings n'existe pas dans le navigator rÃ©el, on utilise une navigation
+// sÃ©curisÃ©e avec canNavigate guard.
+
+type ExtendedGamificationParamList = GamificationStackParamList & {
   Settings: undefined;
 };
 
-type ProfileScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Profile'>;
+type ProfileScreenNavigationProp = NativeStackNavigationProp<ExtendedGamificationParamList, 'Profile'>;
 
 interface ProfileScreenProps {
   navigation: ProfileScreenNavigationProp;
@@ -43,7 +47,7 @@ interface StreakDay {
   completed: boolean;
 }
 
-// ─── Mock Data ───────────────────────────────────────────────────────────────
+// âââ Mock Data âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 const USER = {
   name: 'Alexandre',
@@ -57,10 +61,10 @@ const USER = {
 };
 
 const STATS: StatCard[] = [
-  { id: 'sleep', label: 'Sleep Score', value: 84, unit: '/100', icon: '🌙', trend: 'up', trendValue: '+3', color: '#6B4FBB' },
-  { id: 'energy', label: 'Energy', value: 72, unit: '/100', icon: '⚡', trend: 'up', trendValue: '+8', color: '#F5A623' },
-  { id: 'recovery', label: 'Recovery', value: 91, unit: '/100', icon: '💚', trend: 'neutral', trendValue: '0', color: '#27AE60' },
-  { id: 'stress', label: 'Stress', value: 34, unit: '/100', icon: '🧘', trend: 'down', trendValue: '-12', color: '#3D8BFF' },
+  { id: 'sleep', label: 'Sleep Score', value: 84, unit: '/100', icon: '\uD83C\uDF19', trend: 'up', trendValue: '+3', color: '#6B4FBB' },
+  { id: 'energy', label: 'Energy', value: 72, unit: '/100', icon: '\u26A1', trend: 'up', trendValue: '+8', color: '#F5A623' },
+  { id: 'recovery', label: 'Recovery', value: 91, unit: '/100', icon: '\uD83D\uDC9A', trend: 'neutral', trendValue: '0', color: '#27AE60' },
+  { id: 'stress', label: 'Stress', value: 34, unit: '/100', icon: '\uD83E\uDDD8', trend: 'down', trendValue: '-12', color: '#3D8BFF' },
 ];
 
 const generateStreakDays = (): StreakDay[] => {
@@ -79,25 +83,21 @@ const generateStreakDays = (): StreakDay[] => {
 
 const STREAK_DAYS = generateStreakDays();
 
-// ─── Sub-components ──────────────────────────────────────────────────────────
+// âââ Sub-components ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 const AvatarSection: React.FC<{ level: number }> = ({ level }) => (
-  <View className="items-center mt-4 mb-6">
+  <View style={{ alignItems: 'center', marginTop: 16, marginBottom: 24 }}>
     <View style={{ position: 'relative' }}>
       {/* Glow ring */}
       <View
         style={{
-          width: 100,
-          height: 100,
-          borderRadius: 50,
+          width: 112,
+          height: 112,
+          borderRadius: 56,
           backgroundColor: '#3D8BFF22',
           position: 'absolute',
           top: -6,
           left: -6,
-          right: -6,
-          bottom: -6,
-          width: 112,
-          height: 112,
         }}
       />
       {/* Avatar circle */}
@@ -113,7 +113,7 @@ const AvatarSection: React.FC<{ level: number }> = ({ level }) => (
           justifyContent: 'center',
         }}
       >
-        <Text style={{ fontSize: 44 }}>🧑‍💻</Text>
+        <Text style={{ fontSize: 44 }}>{'\uD83E\uDDD1\u200D\uD83D\uDCBB'}</Text>
       </View>
       {/* Level badge */}
       <View
@@ -136,7 +136,7 @@ const AvatarSection: React.FC<{ level: number }> = ({ level }) => (
     <Text style={{ color: '#A8A8C0', fontSize: 13, marginTop: 2 }}>{USER.username}</Text>
     <View style={{ flexDirection: 'row', marginTop: 8, gap: 4, alignItems: 'center' }}>
       <View style={{ backgroundColor: '#1C1C28', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 }}>
-        <Text style={{ color: '#A8A8C0', fontSize: 12 }}>🗓 {USER.joinedDaysAgo} days active</Text>
+        <Text style={{ color: '#A8A8C0', fontSize: 12 }}>{'\uD83D\uDDD3'} {USER.joinedDaysAgo} days active</Text>
       </View>
     </View>
   </View>
@@ -147,12 +147,20 @@ const XPBar: React.FC<{ current: number; max: number; level: number }> = ({ curr
   const progress = current / max;
 
   useEffect(() => {
-    Animated.timing(animVal, {
+    // DÃ©marrer l'animation et conserver la rÃ©fÃ©rence pour cleanup
+    const animation = Animated.timing(animVal, {
       toValue: progress,
       duration: 1200,
       useNativeDriver: false,
-    }).start();
-  }, [progress]);
+    });
+
+    animation.start();
+
+    // Cleanup: stopper l'animation si le composant dÃ©monte
+    return () => {
+      animation.stop();
+    };
+  }, [progress, animVal]);
 
   const barWidth = animVal.interpolate({
     inputRange: [0, 1],
@@ -199,8 +207,8 @@ const XPBar: React.FC<{ current: number; max: number; level: number }> = ({ curr
   );
 };
 
-const TrendIndicator: React.FC<{ trend: StatCard['trend']; value: string; color: string }> = ({ trend, value, color }) => {
-  const arrow = trend === 'up' ? '↑' : trend === 'down' ? '↓' : '→';
+const TrendIndicator: React.FC<{ trend: StatCard['trend']; value: string; color: string }> = ({ trend, value }) => {
+  const arrow = trend === 'up' ? '\u2191' : trend === 'down' ? '\u2193' : '\u2192';
   const trendColor = trend === 'up' ? '#27AE60' : trend === 'down' ? '#E74C3C' : '#A8A8C0';
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
@@ -262,13 +270,13 @@ const StreaksSection: React.FC = () => (
     <Text style={{ color: '#A8A8C0', fontSize: 12, fontWeight: '600', letterSpacing: 1, marginBottom: 12 }}>STREAKS</Text>
     <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginBottom: 16 }}>
       <View style={{ alignItems: 'center' }}>
-        <Text style={{ fontSize: 28 }}>🔥</Text>
+        <Text style={{ fontSize: 28 }}>{'\uD83D\uDD25'}</Text>
         <Text style={{ color: '#E8E8F0', fontSize: 22, fontWeight: '800' }}>{USER.currentStreak}</Text>
         <Text style={{ color: '#A8A8C0', fontSize: 12 }}>Current Streak</Text>
       </View>
       <View style={{ width: 1, backgroundColor: '#2A2A3A' }} />
       <View style={{ alignItems: 'center' }}>
-        <Text style={{ fontSize: 28 }}>🏆</Text>
+        <Text style={{ fontSize: 28 }}>{'\uD83C\uDFC6'}</Text>
         <Text style={{ color: '#E8E8F0', fontSize: 22, fontWeight: '800' }}>{USER.bestStreak}</Text>
         <Text style={{ color: '#A8A8C0', fontSize: 12 }}>Best Streak</Text>
       </View>
@@ -276,7 +284,7 @@ const StreaksSection: React.FC = () => (
     {/* Calendar dots */}
     <Text style={{ color: '#A8A8C0', fontSize: 11, marginBottom: 8 }}>Last 21 days</Text>
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-      {STREAK_DAYS.map((day, index) => (
+      {STREAK_DAYS.map((day) => (
         <View
           key={day.date}
           style={{
@@ -303,9 +311,28 @@ const StreaksSection: React.FC = () => (
   </View>
 );
 
-// ─── Main Screen ─────────────────────────────────────────────────────────────
+// âââ Main Screen âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
+  // Navigation sÃ©curisÃ©e vers Settings : on vÃ©rifie que la route est disponible
+  // avant de naviguer pour Ã©viter un crash runtime si Settings n'est pas dans
+  // le navigateur rÃ©el.
+  const handleSettingsPress = () => {
+    const state = navigation.getState();
+    const routeExists =
+      state?.routeNames?.includes('Settings') ?? false;
+
+    if (routeExists) {
+      navigation.navigate('Settings');
+    } else {
+      // Route non enregistrÃ©e dans le navigator actuel â navigation silencieuse
+      // En production, on pourrait logger ou afficher un feedback utilisateur.
+      console.warn(
+        '[ProfileScreen] La route "Settings" n\'est pas enregistrÃ©e dans le navigateur actuel. Navigation ignorÃ©e.'
+      );
+    }
+  };
+
   return (
     <View style={{ flex: 1, backgroundColor: '#080810' }}>
       <StatusBar barStyle="light-content" backgroundColor="#080810" />
@@ -323,7 +350,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
         >
           <Text style={{ color: '#E8E8F0', fontSize: 24, fontWeight: '800' }}>Profile</Text>
           <TouchableOpacity
-            onPress={() => navigation.navigate('Settings')}
+            onPress={handleSettingsPress}
             style={{
               width: 40,
               height: 40,
@@ -332,8 +359,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
               alignItems: 'center',
               justifyContent: 'center',
             }}
+            accessibilityLabel="Ouvrir les paramÃ¨tres"
+            accessibilityRole="button"
           >
-            <Text style={{ fontSize: 18 }}>⚙️</Text>
+            <Text style={{ fontSize: 18 }}>{'\u2699\uFE0F'}</Text>
           </TouchableOpacity>
         </View>
 

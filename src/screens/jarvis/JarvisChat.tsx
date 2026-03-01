@@ -13,56 +13,46 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useMutation } from '@tanstack/react-query';
+import type { MessageRole, ChatState, Message } from './types';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type MessageRole = 'jarvis' | 'user';
-
-type ChatState = 'idle' | 'typing' | 'waiting' | 'responding';
-
-interface Message {
-  id: string;
-  role: MessageRole;
-  content: string;
-  timestamp: Date;
-}
+// âââ Types locaux non partagÃ©s ââââââââââââââââââââââââââââââââââââââââââââââââ
 
 interface TypingDot {
   anim: Animated.Value;
 }
 
-// ─── Placeholder AI call ──────────────────────────────────────────────────────
+// âââ Input validation âââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
-async function callJarvisAPI(userMessage: string): Promise<string> {
-  // TODO: replace with actual Supabase Edge Function / OpenAI call
-  await new Promise((res) => setTimeout(res, 1400 + Math.random() * 600));
-  const responses: Record<string, string> = {
-    default:
-      'Bien compris. Je travaille sur vos données de santé pour vous fournir une analyse personnalisée.',
-    bonjour:
-      'Bonjour ! Comment vous sentez-vous aujourd'hui ? Je peux analyser votre sommeil, votre stress ou vos performances.',
-    sommeil:
-      'Votre score de sommeil cette nuit était de 78/100. Phase REM légèrement réduite — je vous recommande 30 min de moins d'écran ce soir.',
-    stress:
-      'Vos niveaux de VFC suggèrent un stress modéré aujourd'hui. Une session de respiration de 5 min pourrait faire la différence.',
-  };
-  const lower = userMessage.toLowerCase();
-  if (lower.includes('bonjour') || lower.includes('salut')) return responses.bonjour;
-  if (lower.includes('sommeil') || lower.includes('nuit')) return responses.sommeil;
-  if (lower.includes('stress') || lower.includes('anxiété')) return responses.stress;
-  return responses.default;
+const MAX_INPUT_LENGTH = 500;
+
+function validateUserInput(text: string): { valid: boolean; sanitized: string; error?: string } {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return { valid: false, sanitized: trimmed, error: 'Message vide.' };
+  }
+  if (trimmed.length > MAX_INPUT_LENGTH) {
+    return { valid: false, sanitized: trimmed, error: 'Message trop long.' };
+  }
+  // Basic sanitation: strip null bytes and control characters (except newlines/tabs)
+  const sanitized = trimmed.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+  if (!sanitized) {
+    return { valid: false, sanitized, error: 'Contenu invalide.' };
+  }
+  return { valid: true, sanitized };
 }
 
-// ─── Typing Indicator ─────────────────────────────────────────────────────────
+// âââ Typing Indicator âââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 function TypingIndicator() {
-  const dots = useRef<TypingDot[]>([
+  const dotsRef = useRef<TypingDot[]>([
     { anim: new Animated.Value(0) },
     { anim: new Animated.Value(0) },
     { anim: new Animated.Value(0) },
-  ]).current;
+  ]);
+  const dots = dotsRef.current;
 
   useEffect(() => {
+    let isMounted = true;
     const animations = dots.map((dot, i) =>
       Animated.loop(
         Animated.sequence([
@@ -81,9 +71,17 @@ function TypingIndicator() {
       )
     );
     const parallel = Animated.parallel(animations);
-    parallel.start();
-    return () => parallel.stop();
-  }, [dots]);
+    if (isMounted) {
+      parallel.start();
+    }
+    return () => {
+      isMounted = false;
+      parallel.stop();
+      // Reset all dot animations to prevent stale state on remount
+      dots.forEach((dot) => dot.anim.setValue(0));
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <View style={styles.typingContainer}>
@@ -110,13 +108,13 @@ function TypingIndicator() {
   );
 }
 
-// ─── Message Bubble ───────────────────────────────────────────────────────────
+// âââ Message Bubble âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 interface MessageBubbleProps {
   message: Message;
 }
 
-function MessageBubble({ message }: MessageBubbleProps) {
+const MessageBubble = React.memo(function MessageBubble({ message }: MessageBubbleProps) {
   const isJarvis = message.role === 'jarvis';
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(12)).current;
@@ -134,7 +132,8 @@ function MessageBubble({ message }: MessageBubbleProps) {
         useNativeDriver: true,
       }),
     ]).start();
-  }, [fadeAnim, slideAnim]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const timeString = message.timestamp.toLocaleTimeString('fr-FR', {
     hour: '2-digit',
@@ -179,9 +178,9 @@ function MessageBubble({ message }: MessageBubbleProps) {
       </View>
     </Animated.View>
   );
-}
+});
 
-// ─── Main Component ───────────────────────────────────────────────────────────
+// âââ Main Component âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 export default function JarvisChat() {
   const [messages, setMessages] = useState<Message[]>([
@@ -189,7 +188,7 @@ export default function JarvisChat() {
       id: '0',
       role: 'jarvis',
       content:
-        'Bonjour. Je suis Jarvis, votre assistant santé IA. Comment puis-je vous aider aujourd'hui ?',
+        'Bonjour. Je suis Jarvis, votre assistant sant\u00e9 IA. Comment puis-je vous aider aujourd\u2019hui\u00a0?',
       timestamp: new Date(),
     },
   ]);
@@ -207,7 +206,7 @@ export default function JarvisChat() {
   }, []);
 
   const { mutate: sendMessage } = useMutation({
-    mutationFn: (userText: string) => callJarvisAPI(userText),
+    mutationFn: (userText: string) => import('../../services/jarvisService').then(m => m.callJarvisAPI(userText)),
     onMutate: (userText: string) => {
       const userMsg: Message = {
         id: generateId(),
@@ -235,7 +234,7 @@ export default function JarvisChat() {
       const errorMsg: Message = {
         id: generateId(),
         role: 'jarvis',
-        content: 'Une erreur est survenue. Veuillez réessayer.',
+        content: 'Une erreur est survenue. Veuillez r\u00e9essayer.',
         timestamp: new Date(),
       };
       setMessages((prev) => [errorMsg, ...prev]);
@@ -245,11 +244,15 @@ export default function JarvisChat() {
   });
 
   const handleSend = useCallback(() => {
-    const trimmed = inputText.trim();
-    if (!trimmed || chatState !== 'idle') return;
+    if (chatState !== 'idle') return;
+    const { valid, sanitized, error } = validateUserInput(inputText);
+    if (!valid || !sanitized) {
+      // Optionally surface error to user; for now silently abort
+      return;
+    }
     setInputText('');
     setChatState('waiting');
-    sendMessage(trimmed);
+    sendMessage(sanitized);
   }, [inputText, chatState, sendMessage]);
 
   const isLoading = chatState === 'typing' || chatState === 'waiting' || chatState === 'responding';
@@ -288,7 +291,7 @@ export default function JarvisChat() {
             <View style={styles.statusDot} />
             <Text style={styles.headerTitle}>Jarvis</Text>
           </View>
-          <Text style={styles.headerSub}>Assistant IA · VIVE</Text>
+          <Text style={styles.headerSub}>Assistant IA \u00b7 VIVE</Text>
         </View>
 
         {/* Message List */}
@@ -312,10 +315,10 @@ export default function JarvisChat() {
             style={styles.input}
             value={inputText}
             onChangeText={setInputText}
-            placeholder="Parlez à Jarvis…"
+            placeholder="Parlez \u00e0 Jarvis\u2026"
             placeholderTextColor="#A8A8C0"
             multiline
-            maxLength={500}
+            maxLength={MAX_INPUT_LENGTH}
             returnKeyType="send"
             onSubmitEditing={handleSend}
             blurOnSubmit={false}
@@ -330,7 +333,7 @@ export default function JarvisChat() {
             ]}
             activeOpacity={0.75}
           >
-            <Text style={styles.sendIcon}>↑</Text>
+            <Text style={styles.sendIcon}>\u2191</Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -338,7 +341,7 @@ export default function JarvisChat() {
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+// âââ Styles âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 const styles = StyleSheet.create({
   safe: {

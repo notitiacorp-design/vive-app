@@ -45,6 +45,17 @@ interface ConsentState {
   marketing: boolean;
 }
 
+// âââ Safe URL opener ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+const openSafeURL = (url: string) => {
+  Linking.canOpenURL(url).then((supported) => {
+    if (supported) {
+      Linking.openURL(url);
+    } else {
+      Alert.alert('Erreur', "Impossible d'ouvrir ce lien.");
+    }
+  });
+};
+
 // âââ Consent Toggle Row âââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 const ConsentRow: React.FC<{
   item: ConsentItem;
@@ -79,7 +90,7 @@ const ConsentRow: React.FC<{
   </View>
 );
 
-// âââ Info Row ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// âââ Info Row âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 const InfoRow: React.FC<{ label: string; value: string; isLast?: boolean }> = ({
   label,
   value,
@@ -95,7 +106,7 @@ const InfoRow: React.FC<{ label: string; value: string; isLast?: boolean }> = ({
   </View>
 );
 
-// âââ Main Screen âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// âââ Main Screen ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 export const DataPrivacyScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
@@ -110,16 +121,22 @@ export const DataPrivacyScreen: React.FC = () => {
   const [exporting, setExporting] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  // ââ Consent handler âââââââââââââââââââââââââââââââââââââââââââââââââââââ
+  // ââ Consent handler âââââââââââââââââââââââââââââââââââââââââââââââââââââââ
   const handleConsentToggle = useCallback(
     async (key: ConsentKey, value: boolean) => {
+      // Correction 3: VÃ©rifier que l'utilisateur est authentifiÃ© avant l'upsert
+      if (!user?.id) {
+        Alert.alert('Erreur', 'Vous devez Ãªtre connectÃ© pour modifier vos prÃ©fÃ©rences.');
+        return;
+      }
+
       setConsents((prev) => ({ ...prev, [key]: value }));
       setSavingConsent(key);
       try {
         const { error } = await supabase
           .from('user_consents')
           .upsert(
-            { user_id: user?.id, [key]: value, updated_at: new Date().toISOString() },
+            { user_id: user.id, [key]: value, updated_at: new Date().toISOString() },
             { onConflict: 'user_id' },
           );
         if (error) throw error;
@@ -134,7 +151,7 @@ export const DataPrivacyScreen: React.FC = () => {
     [user?.id],
   );
 
-  // ââ Export handler ââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+  // ââ Export handler ââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
   const handleExport = useCallback(async () => {
     Alert.alert(
       'Exporter mes donnÃ©es',
@@ -146,13 +163,15 @@ export const DataPrivacyScreen: React.FC = () => {
           onPress: async () => {
             setExporting(true);
             try {
+              // Correction 2: Ne pas passer user_id ni email dans le body
+              // La Edge Function extrait l'identitÃ© depuis le JWT Supabase cÃ´tÃ© serveur
               const { error } = await supabase.functions.invoke('export-user-data', {
-                body: { user_id: user?.id, email: user?.email },
+                body: {},
               });
               if (error) throw error;
               Alert.alert(
                 'Demande envoyÃ©e â',
-                `Un email sera envoyÃ© Ã  ${user?.email} dans les 48 heures.`,
+                'Un email sera envoyÃ© Ã  votre adresse dans les 48 heures.',
               );
             } catch {
               Alert.alert(
@@ -166,9 +185,9 @@ export const DataPrivacyScreen: React.FC = () => {
         },
       ],
     );
-  }, [user?.id, user?.email]);
+  }, []);
 
-  // ââ Delete account handler âââââââââââââââââââââââââââââââââââââââââââââââ
+  // ââ Delete account handler ââââââââââââââââââââââââââââââââââââââââââââââââ
   const handleDeleteAccount = useCallback(() => {
     Alert.alert(
       'â ï¸ Supprimer mon compte',
@@ -191,13 +210,20 @@ export const DataPrivacyScreen: React.FC = () => {
                   onPress: async () => {
                     setDeleting(true);
                     try {
+                      // Correction 1: Ne pas passer user_id dans le body
+                      // La Edge Function extrait l'identitÃ© depuis le JWT Supabase cÃ´tÃ© serveur
                       const { error } = await supabase.functions.invoke(
                         'delete-user-account',
-                        { body: { user_id: user?.id } },
+                        { body: {} },
                       );
                       if (error) throw error;
                       await supabase.auth.signOut();
                       clearAuth();
+                      // Correction 4: Naviguer explicitement vers l'Ã©cran de login aprÃ¨s clearAuth
+                      navigation.reset({
+                        index: 0,
+                        routes: [{ name: 'Auth' as never }],
+                      });
                     } catch {
                       Alert.alert(
                         'Erreur',
@@ -214,16 +240,16 @@ export const DataPrivacyScreen: React.FC = () => {
         },
       ],
     );
-  }, [user?.id, clearAuth]);
+  }, [clearAuth, navigation]);
 
-  // ââ Consent items ââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+  // ââ Consent items âââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
   const consentItems: ConsentItem[] = [
     {
       id: 'analytics',
       key: 'analytics',
       title: 'Analyses & performance',
       description:
-        'Nous aide Ã  amÃ©liorer l\'application en collectant des donnÃ©es d\'utilisation anonymisÃ©es (crashs, performances, parcours utilisateur).',
+        "Nous aide Ã  amÃ©liorer l'application en collectant des donnÃ©es d'utilisation anonymisÃ©es (crashs, performances, parcours utilisateur).",
       icon: <BarChart2 size={15} color="#3D8BFF" />,
       enabled: consents.analytics,
     },
@@ -254,7 +280,7 @@ export const DataPrivacyScreen: React.FC = () => {
     >
       <StatusBar barStyle="light-content" backgroundColor="#080810" />
 
-      {/* ââ Nav Header ââââââââââââââââââââââââââââââââââââ */}
+      {/* ââ Nav Header ââââââââââââââââââââââââââââââ */}
       <View className="flex-row items-center px-5 pt-5 pb-3">
         <TouchableOpacity
           onPress={() => navigation.goBack()}
@@ -269,7 +295,7 @@ export const DataPrivacyScreen: React.FC = () => {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
       >
-        {/* ââ Hero Banner âââââââââââââââââââââââââââââââââââ */}
+        {/* ââ Hero Banner âââââââââââââââââââââââââââââ */}
         <View className="mx-5 mt-2 mb-6 bg-[#1C1C28] rounded-3xl p-5 border border-white/8">
           <View className="flex-row items-center gap-3 mb-3">
             <View className="w-11 h-11 rounded-2xl bg-[#3D8BFF]/15 border border-[#3D8BFF]/25 items-center justify-center">
@@ -283,12 +309,12 @@ export const DataPrivacyScreen: React.FC = () => {
             </View>
           </View>
           <Text className="text-[#A8A8C0] text-sm leading-5">
-            VIVE s\'engage Ã  protÃ©ger votre vie privÃ©e. GÃ©rez ici vos consentements
+            VIVE s'engage Ã  protÃ©ger votre vie privÃ©e. GÃ©rez ici vos consentements
             et droits RGPD.
           </Text>
         </View>
 
-        {/* ââ Consentements âââââââââââââââââââââââââââââââââ */}
+        {/* ââ Consentements âââââââââââââââââââââââââââ */}
         <View className="mx-5 mb-5">
           <View className="flex-row items-center justify-between mb-2">
             <Text className="text-xs font-semibold text-[#A8A8C0] uppercase tracking-widest">
@@ -314,7 +340,7 @@ export const DataPrivacyScreen: React.FC = () => {
           </View>
         </View>
 
-        {/* ââ Export Data âââââââââââââââââââââââââââââââââââ */}
+        {/* ââ Export Data âââââââââââââââââââââââââââââ */}
         <View className="mx-5 mb-5">
           <Text className="text-xs font-semibold text-[#A8A8C0] uppercase tracking-widest mb-2">
             Mes donnÃ©es
@@ -359,7 +385,7 @@ export const DataPrivacyScreen: React.FC = () => {
           </View>
         </View>
 
-        {/* ââ RÃ©tention âââââââââââââââââââââââââââââââââââââ */}
+        {/* ââ RÃ©tention âââââââââââââââââââââââââââââââ */}
         <View className="mx-5 mb-5">
           <Text className="text-xs font-semibold text-[#A8A8C0] uppercase tracking-widest mb-2">
             Conservation des donnÃ©es
@@ -373,17 +399,16 @@ export const DataPrivacyScreen: React.FC = () => {
           </View>
         </View>
 
-        {/* ââ Politique de confidentialitÃ© âââââââââââââââââââ */}
+        {/* ââ Politique de confidentialitÃ© âââââââââââ */}
         <View className="mx-5 mb-5">
           <Text className="text-xs font-semibold text-[#A8A8C0] uppercase tracking-widest mb-2">
             Ressources
           </Text>
 
           <View className="bg-[#111118] rounded-2xl border border-white/6 overflow-hidden">
+            {/* Correction 5: Utiliser openSafeURL Ã  la place de Linking.openURL direct */}
             <TouchableOpacity
-              onPress={() =>
-                Linking.openURL('https://vive.app/privacy')
-              }
+              onPress={() => openSafeURL('https://vive.app/privacy')}
               activeOpacity={0.8}
               className="flex-row items-center px-4 py-4 border-b border-white/5"
             >
@@ -397,7 +422,7 @@ export const DataPrivacyScreen: React.FC = () => {
             </TouchableOpacity>
 
             <TouchableOpacity
-              onPress={() => Linking.openURL('https://vive.app/terms')}
+              onPress={() => openSafeURL('https://vive.app/terms')}
               activeOpacity={0.8}
               className="flex-row items-center px-4 py-4"
             >
@@ -405,14 +430,14 @@ export const DataPrivacyScreen: React.FC = () => {
                 <ExternalLink size={14} color="#A8A8C0" />
               </View>
               <Text className="flex-1 text-sm text-[#E8E8F0] font-medium">
-                Conditions d\'utilisation
+                Conditions d'utilisation
               </Text>
               <ExternalLink size={14} color="#A8A8C0" />
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* ââ Danger Zone âââââââââââââââââââââââââââââââââââ */}
+        {/* ââ Danger Zone âââââââââââââââââââââââââââââ */}
         <View className="mx-5">
           <Text className="text-xs font-semibold text-[#A8A8C0] uppercase tracking-widest mb-2">
             Zone de danger
@@ -458,7 +483,7 @@ export const DataPrivacyScreen: React.FC = () => {
           </View>
         </View>
 
-        {/* ââ Footer ââââââââââââââââââââââââââââââââââââââââ */}
+        {/* ââ Footer ââââââââââââââââââââââââââââââââââ */}
         <View className="mx-5 mt-8">
           <Text className="text-[#A8A8C0]/40 text-xs text-center leading-4">
             VIVE respecte le RÃ¨glement GÃ©nÃ©ral sur la Protection des DonnÃ©es

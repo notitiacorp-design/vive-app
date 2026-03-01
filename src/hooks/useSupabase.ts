@@ -2,9 +2,14 @@
  * @file useSupabase.ts
  * @description React Query wrapper hooks for all Supabase operations in the VIVE app.
  * Covers profile, sleep scores, missions, check-ins, boxes, quests, and collectibles.
+ *
+ * NOTE DE SÃCURITÃ (correction #4):
+ * Les donnÃ©es de santÃ© (SleepScore, HeartRate, HRV) ne doivent PAS Ãªtre persistÃ©es
+ * dans un cache React Query persistÃ© (ex: AsyncStorage hydration). Assurez-vous que
+ * le QueryClient utilisÃ© dans l'app n'a pas de persistor configurÃ© pour ces queries,
+ * ou que le persistor exclut les clÃ©s 'supabase/sleepScores'.
  */
 
-import { useCallback } from 'react';
 import {
   useQuery,
   useMutation,
@@ -12,8 +17,36 @@ import {
   UseQueryResult,
   UseMutationResult,
   UseQueryOptions,
+  useInfiniteQuery,
+  UseInfiniteQueryResult,
+  InfiniteData,
 } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
+
+// ---------------------------------------------------------------------------
+// Custom Error Class (correction #2)
+// ---------------------------------------------------------------------------
+
+export type SupabaseErrorCode =
+  | 'UNAUTHENTICATED'
+  | 'FETCH_FAILED'
+  | 'NOT_FOUND'
+  | 'UPDATE_FAILED'
+  | 'INSERT_FAILED'
+  | 'FUNCTION_FAILED'
+  | 'VALIDATION_ERROR';
+
+export class SupabaseError extends Error {
+  public readonly code: SupabaseErrorCode;
+
+  constructor(code: SupabaseErrorCode, message: string) {
+    super(message);
+    this.name = 'SupabaseError';
+    this.code = code;
+    // NÃ©cessaire pour que instanceof fonctionne correctement avec TypeScript
+    Object.setPrototypeOf(this, SupabaseError.prototype);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Database Types
@@ -42,9 +75,9 @@ export interface SleepScore {
   id: string;
   user_id: string;
   date: string;
-  score: number; // 0–100
+  score: number; // 0â100
   duration_minutes: number;
-  efficiency: number; // 0–1
+  efficiency: number; // 0â1
   deep_sleep_minutes: number;
   rem_sleep_minutes: number;
   awakenings: number;
@@ -101,7 +134,7 @@ export interface Quest {
   user_id: string;
   title: string;
   description: string;
-  progress: number; // 0–100
+  progress: number; // 0â100
   target: number;
   current: number;
   xp_reward: number;
@@ -125,6 +158,17 @@ export interface Collectible {
 }
 
 // ---------------------------------------------------------------------------
+// Pagination Types (correction #6)
+// ---------------------------------------------------------------------------
+
+export interface CollectiblesPage {
+  items: Collectible[];
+  nextCursor: number | null;
+}
+
+export const COLLECTIBLES_PAGE_SIZE = 20;
+
+// ---------------------------------------------------------------------------
 // Query Key Factory
 // ---------------------------------------------------------------------------
 
@@ -136,18 +180,96 @@ export const queryKeys = {
   boxes: ['supabase', 'boxes'] as const,
   quests: ['supabase', 'quests'] as const,
   collectibles: ['supabase', 'collectibles'] as const,
+  collectiblesInfinite: ['supabase', 'collectibles', 'infinite'] as const,
+  currentUser: ['supabase', 'currentUser'] as const,
 } as const;
 
 // ---------------------------------------------------------------------------
-// Auth Helper
+// Centralized current user hook (correction #5)
 // ---------------------------------------------------------------------------
 
+/**
+ * Hook centralisÃ© pour rÃ©cupÃ©rer l'utilisateur courant avec cache React Query.
+ * Ãvite de multiples appels rÃ©seau Ã  supabase.auth.getUser() par query.
+ */
+export function useCurrentUser(): UseQueryResult<string, SupabaseError> {
+  return useQuery<string, SupabaseError>({
+    queryKey: queryKeys.currentUser,
+    queryFn: async () => {
+      const { data, error } = await supabase.auth.getUser();
+      if (error || !data.user) {
+        throw new SupabaseError(
+          'UNAUTHENTICATED',
+          "L'utilisateur n'est pas authentifiÃ©",
+        );
+      }
+      return data.user.id;
+    },
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Auth Helper (correction #2 + #5)
+// ---------------------------------------------------------------------------
+
+/**
+ * RÃ©cupÃ¨re l'ID utilisateur courant depuis Supabase Auth.
+ * Lance une SupabaseError avec le code UNAUTHENTICATED si non connectÃ©.
+ */
 async function getCurrentUserId(): Promise<string> {
   const { data, error } = await supabase.auth.getUser();
   if (error || !data.user) {
-    throw new Error('User not authenticated');
+    throw new SupabaseError(
+      'UNAUTHENTICATED',
+      "L'utilisateur n'est pas authentifiÃ©",
+    );
   }
   return data.user.id;
+}
+
+// ---------------------------------------------------------------------------
+// Validation Helpers (correction #3)
+// ---------------------------------------------------------------------------
+
+const DISPLAY_NAME_MAX_LENGTH = 50;
+const DISPLAY_NAME_MIN_LENGTH = 1;
+// Lettres, chiffres, espaces, tirets, underscores, apostrophes
+const DISPLAY_NAME_REGEX = /^[\p{L}\p{N} \-_'.]+$/u;
+const BIO_MAX_LENGTH = 300;
+
+function validateProfileUpdate(updates: ProfileUpdate): void {
+  if (updates.display_name !== undefined) {
+    const name = updates.display_name.trim();
+    if (name.length < DISPLAY_NAME_MIN_LENGTH) {
+      throw new SupabaseError(
+        'VALIDATION_ERROR',
+        'Le nom d\'affichage ne peut pas Ãªtre vide.',
+      );
+    }
+    if (name.length > DISPLAY_NAME_MAX_LENGTH) {
+      throw new SupabaseError(
+        'VALIDATION_ERROR',
+        `Le nom d'affichage ne doit pas dÃ©passer ${DISPLAY_NAME_MAX_LENGTH} caractÃ¨res.`,
+      );
+    }
+    if (!DISPLAY_NAME_REGEX.test(name)) {
+      throw new SupabaseError(
+        'VALIDATION_ERROR',
+        'Le nom d\'affichage contient des caractÃ¨res non autorisÃ©s.',
+      );
+    }
+  }
+
+  if (updates.bio !== undefined && updates.bio !== null) {
+    if (updates.bio.length > BIO_MAX_LENGTH) {
+      throw new SupabaseError(
+        'VALIDATION_ERROR',
+        `La biographie ne doit pas dÃ©passer ${BIO_MAX_LENGTH} caractÃ¨res.`,
+      );
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -159,9 +281,9 @@ async function getCurrentUserId(): Promise<string> {
  * Returns a React Query result with the profile data.
  */
 export function useProfile(
-  queryOptions?: Partial<UseQueryOptions<Profile, Error>>,
-): UseQueryResult<Profile, Error> {
-  return useQuery<Profile, Error>({
+  queryOptions?: Omit<UseQueryOptions<Profile, SupabaseError>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<Profile, SupabaseError> {
+  return useQuery<Profile, SupabaseError>({
     queryKey: queryKeys.profile,
     queryFn: async () => {
       const userId = await getCurrentUserId();
@@ -172,8 +294,15 @@ export function useProfile(
         .eq('user_id', userId)
         .single();
 
-      if (error) throw new Error(`Failed to fetch profile: ${error.message}`);
-      if (!data) throw new Error('Profile not found');
+      if (error) {
+        throw new SupabaseError(
+          'FETCH_FAILED',
+          `Impossible de rÃ©cupÃ©rer le profil : ${error.message}`,
+        );
+      }
+      if (!data) {
+        throw new SupabaseError('NOT_FOUND', 'Profil introuvable.');
+      }
 
       return data as Profile;
     },
@@ -184,24 +313,46 @@ export function useProfile(
 
 /**
  * Mutation hook to update the current user's profile.
+ * Validates inputs before sending to Supabase.
  * Automatically invalidates the profile query on success.
  */
-export function useUpdateProfile(): UseMutationResult<Profile, Error, ProfileUpdate> {
+export function useUpdateProfile(): UseMutationResult<Profile, SupabaseError, ProfileUpdate> {
   const queryClient = useQueryClient();
 
-  return useMutation<Profile, Error, ProfileUpdate>({
+  return useMutation<Profile, SupabaseError, ProfileUpdate>({
     mutationFn: async (updates: ProfileUpdate) => {
+      // Validation cÃ´tÃ© client avant l'appel Supabase (correction #3)
+      validateProfileUpdate(updates);
+
+      // Trim du display_name si prÃ©sent
+      const sanitizedUpdates: ProfileUpdate = {
+        ...updates,
+        ...(updates.display_name !== undefined
+          ? { display_name: updates.display_name.trim() }
+          : {}),
+      };
+
       const userId = await getCurrentUserId();
 
       const { data, error } = await supabase
         .from('profiles')
-        .update({ ...updates, updated_at: new Date().toISOString() })
+        .update({ ...sanitizedUpdates, updated_at: new Date().toISOString() })
         .eq('user_id', userId)
         .select('*')
         .single();
 
-      if (error) throw new Error(`Failed to update profile: ${error.message}`);
-      if (!data) throw new Error('No data returned from profile update');
+      if (error) {
+        throw new SupabaseError(
+          'UPDATE_FAILED',
+          `Impossible de mettre Ã  jour le profil : ${error.message}`,
+        );
+      }
+      if (!data) {
+        throw new SupabaseError(
+          'NOT_FOUND',
+          'Aucune donnÃ©e retournÃ©e aprÃ¨s la mise Ã  jour du profil.',
+        );
+      }
 
       return data as Profile;
     },
@@ -209,7 +360,10 @@ export function useUpdateProfile(): UseMutationResult<Profile, Error, ProfileUpd
       queryClient.setQueryData<Profile>(queryKeys.profile, updatedProfile);
     },
     onError: (error) => {
-      console.error('[VIVE Supabase] Profile update failed:', error.message);
+      console.error(
+        `[VIVE Supabase] Ãchec de la mise Ã  jour du profil [${error.code}]:`,
+        error.message,
+      );
     },
   });
 }
@@ -220,14 +374,15 @@ export function useUpdateProfile(): UseMutationResult<Profile, Error, ProfileUpd
 
 /**
  * Fetches sleep scores for the past N days.
+ * NOTE: Les donnÃ©es de santÃ© ne doivent PAS Ãªtre persistÃ©es dans le cache.
  *
  * @param days - Number of days to look back (default: 7)
  */
 export function useSleepScores(
   days: number = 7,
-  queryOptions?: Partial<UseQueryOptions<SleepScore[], Error>>,
-): UseQueryResult<SleepScore[], Error> {
-  return useQuery<SleepScore[], Error>({
+  queryOptions?: Omit<UseQueryOptions<SleepScore[], SupabaseError>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<SleepScore[], SupabaseError> {
+  return useQuery<SleepScore[], SupabaseError>({
     queryKey: queryKeys.sleepScores(days),
     queryFn: async () => {
       const userId = await getCurrentUserId();
@@ -243,11 +398,18 @@ export function useSleepScores(
         .order('date', { ascending: false })
         .limit(days);
 
-      if (error) throw new Error(`Failed to fetch sleep scores: ${error.message}`);
+      if (error) {
+        throw new SupabaseError(
+          'FETCH_FAILED',
+          `Impossible de rÃ©cupÃ©rer les scores de sommeil : ${error.message}`,
+        );
+      }
 
       return (data ?? []) as SleepScore[];
     },
     staleTime: 5 * 60 * 1000,
+    // Marquer explicitement pour ne pas persister (correction #4)
+    // Le persistor doit exclure la clÃ© 'supabase/sleepScores' cÃ´tÃ© configuration
     ...queryOptions,
   });
 }
@@ -260,9 +422,9 @@ export function useSleepScores(
  * Fetches active missions for the current user.
  */
 export function useMissions(
-  queryOptions?: Partial<UseQueryOptions<Mission[], Error>>,
-): UseQueryResult<Mission[], Error> {
-  return useQuery<Mission[], Error>({
+  queryOptions?: Omit<UseQueryOptions<Mission[], SupabaseError>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<Mission[], SupabaseError> {
+  return useQuery<Mission[], SupabaseError>({
     queryKey: queryKeys.missions,
     queryFn: async () => {
       const userId = await getCurrentUserId();
@@ -274,7 +436,12 @@ export function useMissions(
         .in('status', ['active'])
         .order('due_date', { ascending: true });
 
-      if (error) throw new Error(`Failed to fetch missions: ${error.message}`);
+      if (error) {
+        throw new SupabaseError(
+          'FETCH_FAILED',
+          `Impossible de rÃ©cupÃ©rer les missions : ${error.message}`,
+        );
+      }
 
       return (data ?? []) as Mission[];
     },
@@ -294,12 +461,12 @@ export interface UpdateMissionStatusInput {
  */
 export function useUpdateMissionStatus(): UseMutationResult<
   Mission,
-  Error,
+  SupabaseError,
   UpdateMissionStatusInput
 > {
   const queryClient = useQueryClient();
 
-  return useMutation<Mission, Error, UpdateMissionStatusInput>({
+  return useMutation<Mission, SupabaseError, UpdateMissionStatusInput>({
     mutationFn: async ({ missionId, status }) => {
       const updates: Partial<Mission> = {
         status,
@@ -314,14 +481,24 @@ export function useUpdateMissionStatus(): UseMutationResult<
         .select('*')
         .single();
 
-      if (error) throw new Error(`Failed to update mission: ${error.message}`);
-      if (!data) throw new Error('No data returned from mission update');
+      if (error) {
+        throw new SupabaseError(
+          'UPDATE_FAILED',
+          `Impossible de mettre Ã  jour la mission : ${error.message}`,
+        );
+      }
+      if (!data) {
+        throw new SupabaseError(
+          'NOT_FOUND',
+          'Aucune donnÃ©e retournÃ©e aprÃ¨s la mise Ã  jour de la mission.',
+        );
+      }
 
       return data as Mission;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.missions });
-      // Also refresh profile since completing missions awards XP
+      // RafraÃ®chissement du profil car les missions complÃ©tÃ©es accordent de l'XP
       queryClient.invalidateQueries({ queryKey: queryKeys.profile });
     },
   });
@@ -335,10 +512,10 @@ export function useUpdateMissionStatus(): UseMutationResult<
  * Mutation hook to submit a daily check-in.
  * Invalidates check-in and profile queries on success.
  */
-export function useCheckin(): UseMutationResult<Checkin, Error, CheckinInput> {
+export function useCheckin(): UseMutationResult<Checkin, SupabaseError, CheckinInput> {
   const queryClient = useQueryClient();
 
-  return useMutation<Checkin, Error, CheckinInput>({
+  return useMutation<Checkin, SupabaseError, CheckinInput>({
     mutationFn: async (input: CheckinInput) => {
       const userId = await getCurrentUserId();
 
@@ -358,8 +535,18 @@ export function useCheckin(): UseMutationResult<Checkin, Error, CheckinInput> {
         .select('*')
         .single();
 
-      if (error) throw new Error(`Failed to submit check-in: ${error.message}`);
-      if (!data) throw new Error('No data returned from check-in');
+      if (error) {
+        throw new SupabaseError(
+          'INSERT_FAILED',
+          `Impossible de soumettre le check-in : ${error.message}`,
+        );
+      }
+      if (!data) {
+        throw new SupabaseError(
+          'NOT_FOUND',
+          'Aucune donnÃ©e retournÃ©e aprÃ¨s le check-in.',
+        );
+      }
 
       return data as Checkin;
     },
@@ -379,9 +566,9 @@ export function useCheckin(): UseMutationResult<Checkin, Error, CheckinInput> {
  * Fetches the user's box history, ordered by most recent first.
  */
 export function useBoxes(
-  queryOptions?: Partial<UseQueryOptions<Box[], Error>>,
-): UseQueryResult<Box[], Error> {
-  return useQuery<Box[], Error>({
+  queryOptions?: Omit<UseQueryOptions<Box[], SupabaseError>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<Box[], SupabaseError> {
+  return useQuery<Box[], SupabaseError>({
     queryKey: queryKeys.boxes,
     queryFn: async () => {
       const userId = await getCurrentUserId();
@@ -393,7 +580,12 @@ export function useBoxes(
         .order('created_at', { ascending: false })
         .limit(50);
 
-      if (error) throw new Error(`Failed to fetch boxes: ${error.message}`);
+      if (error) {
+        throw new SupabaseError(
+          'FETCH_FAILED',
+          `Impossible de rÃ©cupÃ©rer les boÃ®tes : ${error.message}`,
+        );
+      }
 
       return (data ?? []) as Box[];
     },
@@ -416,24 +608,35 @@ export interface OpenBoxResult {
  * Mutation hook to open a box.
  * Calls a Supabase edge function for server-side reward logic.
  */
-export function useOpenBox(): UseMutationResult<OpenBoxResult, Error, OpenBoxInput> {
+export function useOpenBox(): UseMutationResult<OpenBoxResult, SupabaseError, OpenBoxInput> {
   const queryClient = useQueryClient();
 
-  return useMutation<OpenBoxResult, Error, OpenBoxInput>({
+  return useMutation<OpenBoxResult, SupabaseError, OpenBoxInput>({
     mutationFn: async ({ boxId }) => {
       const { data, error } = await supabase.functions.invoke<OpenBoxResult>(
         'open-box',
         { body: { box_id: boxId } },
       );
 
-      if (error) throw new Error(`Failed to open box: ${error.message}`);
-      if (!data) throw new Error('No data returned from open-box function');
+      if (error) {
+        throw new SupabaseError(
+          'FUNCTION_FAILED',
+          `Impossible d'ouvrir la boÃ®te : ${error.message}`,
+        );
+      }
+      if (!data) {
+        throw new SupabaseError(
+          'NOT_FOUND',
+          'Aucune donnÃ©e retournÃ©e par la fonction open-box.',
+        );
+      }
 
       return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.boxes });
       queryClient.invalidateQueries({ queryKey: queryKeys.collectibles });
+      queryClient.invalidateQueries({ queryKey: queryKeys.collectiblesInfinite });
       queryClient.invalidateQueries({ queryKey: queryKeys.profile });
     },
   });
@@ -447,9 +650,9 @@ export function useOpenBox(): UseMutationResult<OpenBoxResult, Error, OpenBoxInp
  * Fetches active quests with their current progress.
  */
 export function useQuests(
-  queryOptions?: Partial<UseQueryOptions<Quest[], Error>>,
-): UseQueryResult<Quest[], Error> {
-  return useQuery<Quest[], Error>({
+  queryOptions?: Omit<UseQueryOptions<Quest[], SupabaseError>, 'queryKey' | 'queryFn'>,
+): UseQueryResult<Quest[], SupabaseError> {
+  return useQuery<Quest[], SupabaseError>({
     queryKey: queryKeys.quests,
     queryFn: async () => {
       const userId = await getCurrentUserId();
@@ -462,7 +665,12 @@ export function useQuests(
         .gt('expires_at', new Date().toISOString())
         .order('expires_at', { ascending: true });
 
-      if (error) throw new Error(`Failed to fetch quests: ${error.message}`);
+      if (error) {
+        throw new SupabaseError(
+          'FETCH_FAILED',
+          `Impossible de rÃ©cupÃ©rer les quÃªtes : ${error.message}`,
+        );
+      }
 
       return (data ?? []) as Quest[];
     },
@@ -472,32 +680,46 @@ export function useQuests(
 }
 
 // ---------------------------------------------------------------------------
-// Collectible Hooks
+// Collectible Hooks (correction #6 : pagination via useInfiniteQuery)
 // ---------------------------------------------------------------------------
 
 /**
- * Fetches all collectibles owned by the current user.
+ * Fetches collectibles owned by the current user with infinite scroll pagination.
+ * Remplace useCollectibles() qui chargeait TOUT sans limite.
+ *
+ * @param pageSize - Nombre d'items par page (dÃ©faut: COLLECTIBLES_PAGE_SIZE)
  */
 export function useCollectibles(
-  queryOptions?: Partial<UseQueryOptions<Collectible[], Error>>,
-): UseQueryResult<Collectible[], Error> {
-  return useQuery<Collectible[], Error>({
-    queryKey: queryKeys.collectibles,
-    queryFn: async () => {
+  pageSize: number = COLLECTIBLES_PAGE_SIZE,
+): UseInfiniteQueryResult<InfiniteData<CollectiblesPage>, SupabaseError> {
+  return useInfiniteQuery<CollectiblesPage, SupabaseError, InfiniteData<CollectiblesPage>, readonly string[], number>({
+    queryKey: queryKeys.collectiblesInfinite,
+    initialPageParam: 0,
+    queryFn: async ({ pageParam }) => {
+      const offset = pageParam;
       const userId = await getCurrentUserId();
 
       const { data, error } = await supabase
         .from('collectibles')
         .select('*')
         .eq('user_id', userId)
-        .order('obtained_at', { ascending: false });
+        .order('obtained_at', { ascending: false })
+        .range(offset, offset + pageSize - 1);
 
-      if (error) throw new Error(`Failed to fetch collectibles: ${error.message}`);
+      if (error) {
+        throw new SupabaseError(
+          'FETCH_FAILED',
+          `Impossible de rÃ©cupÃ©rer les collectibles : ${error.message}`,
+        );
+      }
 
-      return (data ?? []) as Collectible[];
+      const items = (data ?? []) as Collectible[];
+      const nextCursor = items.length === pageSize ? offset + pageSize : null;
+
+      return { items, nextCursor };
     },
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     staleTime: 10 * 60 * 1000,
-    ...queryOptions,
   });
 }
 
@@ -516,4 +738,5 @@ export {
   useOpenBox,
   useQuests,
   useCollectibles,
+  useCurrentUser,
 };

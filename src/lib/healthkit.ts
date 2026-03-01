@@ -1,10 +1,14 @@
 /**
  * src/lib/healthkit.ts
- * VIVE App — HealthKit wrapper (iOS only)
+ * VIVE App â HealthKit wrapper (iOS only)
  *
  * Provides a clean, typed API over react-native-health.
  * All public functions are no-ops (returning empty/null) on Android so that
  * callers do not need platform guards everywhere.
+ *
+ * Ce fichier constitue la source de vÃ©ritÃ© unique pour la logique HealthKit.
+ * Le hook useHealthKit.ts doit utiliser ces fonctions plutÃ´t que de dupliquer
+ * la logique d'accÃ¨s aux donnÃ©es.
  */
 
 import { Platform } from 'react-native';
@@ -60,7 +64,7 @@ export interface SleepSample {
   id: string;
   startDate: string;
   endDate: string;
-  /** Duration in minutes. */
+  /** DurÃ©e en minutes. */
   durationMinutes: number;
   /** 'INBED' | 'ASLEEP' | 'AWAKE' | 'CORE' | 'DEEP' | 'REM' */
   value: string;
@@ -69,20 +73,32 @@ export interface SleepSample {
 export interface HeartRateSample {
   startDate: string;
   endDate: string;
-  /** Beats per minute. */
+  /** Battements par minute. */
   value: number;
 }
 
 export interface HRVSample {
   startDate: string;
   endDate: string;
-  /** SDNN in milliseconds. */
+  /** SDNN en millisecondes. */
   value: number;
 }
 
 export interface StepSample {
   startDate: string;
   endDate: string;
+  /** Nombre de pas. */
+  value: number;
+}
+
+/**
+ * Interface sÃ©mantiquement correcte pour les donnÃ©es de calories.
+ * Distincte de StepSample pour Ã©viter la confusion entre les types de donnÃ©es.
+ */
+export interface CalorieSample {
+  startDate: string;
+  endDate: string;
+  /** Ãnergie dÃ©pensÃ©e en kilocalories (kcal). */
   value: number;
 }
 
@@ -105,15 +121,41 @@ function dateRangeOptions(
   };
 }
 
-/** Safely run a HealthKit query; rejects with a HealthKitError on failure. */
+/**
+ * Type reprÃ©sentant une erreur HealthKit â peut Ãªtre une chaÃ®ne, un objet,
+ * ou null selon le callback natif react-native-health.
+ */
+type HealthKitCallbackError = string | object | null;
+
+/**
+ * Convertit une erreur de callback HealthKit en message lisible.
+ */
+function formatHealthKitError(err: HealthKitCallbackError): string {
+  if (err === null) return 'Erreur inconnue HealthKit';
+  if (typeof err === 'string') return err;
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return String(err);
+  }
+}
+
+/**
+ * Safely run a HealthKit query; rejects with a HealthKitError on failure.
+ * Le callback err est typÃ© comme 'string | object | null' car HealthKit
+ * peut retourner des erreurs sous diffÃ©rentes formes selon le type de requÃªte.
+ */
 function runQuery<T>(
-  queryFn: (options: HealthInputOptions, callback: (err: string, results: T) => void) => void,
+  queryFn: (
+    options: HealthInputOptions,
+    callback: (err: HealthKitCallbackError, results: T) => void,
+  ) => void,
   options: HealthInputOptions,
 ): Promise<T> {
   return new Promise((resolve, reject) => {
     queryFn(options, (err, results) => {
       if (err) {
-        reject(new HealthKitError(typeof err === 'string' ? err : JSON.stringify(err)));
+        reject(new HealthKitError(formatHealthKitError(err)));
       } else {
         resolve(results);
       }
@@ -126,9 +168,9 @@ function runQuery<T>(
 // ---------------------------------------------------------------------------
 
 /**
- * Initialise HealthKit and request the required permissions.
- * Resolves `true` when permissions are granted, `false` on Android.
- * Rejects with a HealthKitError if HealthKit initialisation fails.
+ * Initialise HealthKit et demande les permissions requises.
+ * RÃ©sout `true` lorsque les permissions sont accordÃ©es, `false` sur Android.
+ * Rejette avec une HealthKitError si l'initialisation HealthKit Ã©choue.
  */
 export function initHealthKit(): Promise<boolean> {
   if (Platform.OS !== 'ios') {
@@ -140,13 +182,13 @@ export function initHealthKit(): Promise<boolean> {
       if (error) {
         reject(
           new HealthKitError(
-            `HealthKit initialisation failed: ${error}`,
+            `Ãchec de l'initialisation HealthKit : ${error}`,
             'INIT_FAILED',
           ),
         );
       } else {
         if (__DEV__) {
-          console.log('[VIVE/HealthKit] Initialised and permissions granted.');
+          console.log('[VIVE/HealthKit] InitialisÃ© et permissions accordÃ©es.');
         }
         resolve(true);
       }
@@ -155,11 +197,11 @@ export function initHealthKit(): Promise<boolean> {
 }
 
 /**
- * Query sleep analysis samples from HealthKit.
+ * Interroge les Ã©chantillons d'analyse du sommeil depuis HealthKit.
  *
- * @param start  Query window start.
- * @param end    Query window end.
- * @returns      Array of formatted sleep samples.
+ * @param start  DÃ©but de la fenÃªtre de requÃªte.
+ * @param end    Fin de la fenÃªtre de requÃªte.
+ * @returns      Tableau d'Ã©chantillons de sommeil formatÃ©s.
  */
 export async function querySleepSamples(
   start: Date,
@@ -170,7 +212,6 @@ export async function querySleepSamples(
   try {
     const options = dateRangeOptions(start, end);
     const raw = await runQuery<HealthValue[]>(
-      // react-native-health exposes this as getSleepSamples
       (opts, cb) => AppleHealthKit.getSleepSamples(opts, cb),
       options,
     );
@@ -187,7 +228,7 @@ export async function querySleepSamples(
       };
     });
   } catch (err) {
-    console.error('[VIVE/HealthKit] querySleepSamples error:', err);
+    console.error('[VIVE/HealthKit] Erreur querySleepSamples :', err);
     throw err instanceof HealthKitError
       ? err
       : new HealthKitError(String(err), 'SLEEP_QUERY_FAILED');
@@ -195,11 +236,11 @@ export async function querySleepSamples(
 }
 
 /**
- * Query heart-rate samples from HealthKit.
+ * Interroge les Ã©chantillons de frÃ©quence cardiaque depuis HealthKit.
  *
- * @param start  Query window start.
- * @param end    Query window end.
- * @returns      Array of HR samples (bpm).
+ * @param start  DÃ©but de la fenÃªtre de requÃªte.
+ * @param end    Fin de la fenÃªtre de requÃªte.
+ * @returns      Tableau d'Ã©chantillons FC (bpm).
  */
 export async function queryHeartRate(
   start: Date,
@@ -220,7 +261,7 @@ export async function queryHeartRate(
       value: sample.value,
     }));
   } catch (err) {
-    console.error('[VIVE/HealthKit] queryHeartRate error:', err);
+    console.error('[VIVE/HealthKit] Erreur queryHeartRate :', err);
     throw err instanceof HealthKitError
       ? err
       : new HealthKitError(String(err), 'HR_QUERY_FAILED');
@@ -228,11 +269,12 @@ export async function queryHeartRate(
 }
 
 /**
- * Query heart-rate variability (HRV / SDNN) samples from HealthKit.
+ * Interroge les Ã©chantillons de variabilitÃ© de la frÃ©quence cardiaque (VFC / SDNN)
+ * depuis HealthKit.
  *
- * @param start  Query window start.
- * @param end    Query window end.
- * @returns      Array of HRV samples (ms SDNN).
+ * @param start  DÃ©but de la fenÃªtre de requÃªte.
+ * @param end    Fin de la fenÃªtre de requÃªte.
+ * @returns      Tableau d'Ã©chantillons VFC (ms SDNN).
  */
 export async function queryHRV(
   start: Date,
@@ -250,11 +292,11 @@ export async function queryHRV(
     return raw.map((sample) => ({
       startDate: sample.startDate,
       endDate: sample.endDate,
-      // HealthKit returns HRV in seconds; convert to milliseconds.
+      // HealthKit retourne la VFC en secondes ; conversion en millisecondes.
       value: sample.value * 1000,
     }));
   } catch (err) {
-    console.error('[VIVE/HealthKit] queryHRV error:', err);
+    console.error('[VIVE/HealthKit] Erreur queryHRV :', err);
     throw err instanceof HealthKitError
       ? err
       : new HealthKitError(String(err), 'HRV_QUERY_FAILED');
@@ -262,11 +304,11 @@ export async function queryHRV(
 }
 
 /**
- * Query step-count samples from HealthKit.
+ * Interroge les Ã©chantillons de nombre de pas depuis HealthKit.
  *
- * @param start  Query window start.
- * @param end    Query window end.
- * @returns      Array of step samples.
+ * @param start  DÃ©but de la fenÃªtre de requÃªte.
+ * @param end    Fin de la fenÃªtre de requÃªte.
+ * @returns      Tableau d'Ã©chantillons de pas.
  */
 export async function querySteps(
   start: Date,
@@ -287,7 +329,7 @@ export async function querySteps(
       value: sample.value,
     }));
   } catch (err) {
-    console.error('[VIVE/HealthKit] querySteps error:', err);
+    console.error('[VIVE/HealthKit] Erreur querySteps :', err);
     throw err instanceof HealthKitError
       ? err
       : new HealthKitError(String(err), 'STEPS_QUERY_FAILED');
@@ -295,16 +337,18 @@ export async function querySteps(
 }
 
 /**
- * Query active energy burned samples from HealthKit.
+ * Interroge les Ã©chantillons d'Ã©nergie active dÃ©pensÃ©e depuis HealthKit.
+ * Retourne des CalorieSample (et non StepSample) pour reflÃ©ter correctement
+ * la sÃ©mantique des donnÃ©es de calories.
  *
- * @param start  Query window start.
- * @param end    Query window end.
- * @returns      Array of calorie samples (kcal).
+ * @param start  DÃ©but de la fenÃªtre de requÃªte.
+ * @param end    Fin de la fenÃªtre de requÃªte.
+ * @returns      Tableau d'Ã©chantillons de calories (kcal).
  */
 export async function queryActiveCalories(
   start: Date,
   end: Date,
-): Promise<StepSample[]> {
+): Promise<CalorieSample[]> {
   if (Platform.OS !== 'ios') return [];
 
   try {
@@ -323,7 +367,7 @@ export async function queryActiveCalories(
       value: sample.value,
     }));
   } catch (err) {
-    console.error('[VIVE/HealthKit] queryActiveCalories error:', err);
+    console.error('[VIVE/HealthKit] Erreur queryActiveCalories :', err);
     throw err instanceof HealthKitError
       ? err
       : new HealthKitError(String(err), 'CALORIES_QUERY_FAILED');

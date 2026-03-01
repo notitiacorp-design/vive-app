@@ -1,15 +1,19 @@
 /**
  * @file useHealthConnect.ts
- * @description Android Health Connect integration hook for VIVE app.
- * Provides React Query-based hooks for sleep, heart rate, HRV, and activity data.
- * All hooks are guarded with Platform.OS === 'android' checks.
+ * @description Android Health Connect integration hook pour l'application VIVE.
+ * Fournit des hooks basÃ©s sur React Query pour les donnÃ©es de sommeil, frÃ©quence cardiaque, HRV et activitÃ©.
+ * Tous les hooks sont protÃ©gÃ©s par des vÃ©rifications Platform.OS === 'android'.
+ *
+ * @note Les paramÃ¨tres startDate et endDate passÃ©s aux hooks doivent Ãªtre mÃ©moÃ¯sÃ©s par le composant
+ * appelant (via useMemo ou useState) pour Ã©viter des re-dÃ©clenchements de requÃªtes Ã  chaque render,
+ * car les objets Date crÃ©Ã©s inline crÃ©ent une nouvelle rÃ©fÃ©rence Ã  chaque render.
  */
 
 import { useCallback } from 'react';
 import { Platform } from 'react-native';
 import { useQuery, useQueryClient, UseQueryResult } from '@tanstack/react-query';
 import {
-  initialize,
+  initialize as initializeSDK,
   requestPermission,
   readRecords,
   getSdkStatus,
@@ -52,8 +56,11 @@ export class HealthConnectError extends Error {
 export interface SleepSampleData {
   startDate: string;
   endDate: string;
-  /** Maps Health Connect stage values to human-readable labels */
-  value: 'INBED' | 'ASLEEP' | 'AWAKE' | 'CORE' | 'DEEP' | 'REM' | 'LIGHT';
+  /**
+   * Mappe les valeurs de stade Health Connect vers des libellÃ©s lisibles.
+   * 'UNKNOWN' est inclus pour le stade 0 (non dÃ©fini par Health Connect).
+   */
+  value: 'INBED' | 'ASLEEP' | 'AWAKE' | 'CORE' | 'DEEP' | 'REM' | 'LIGHT' | 'UNKNOWN';
   sourceId: string;
   sourceName: string;
 }
@@ -80,6 +87,123 @@ export interface ActivityData {
 }
 
 // ---------------------------------------------------------------------------
+// Typed Health Connect Record Interfaces
+// ---------------------------------------------------------------------------
+
+interface HealthConnectMetadata {
+  dataOrigin?: string;
+  id?: string;
+}
+
+interface SleepStage {
+  startTime: string;
+  endTime: string;
+  stage: number;
+}
+
+interface SleepSessionRecord {
+  startTime: string;
+  endTime: string;
+  stages?: SleepStage[];
+  metadata?: HealthConnectMetadata;
+}
+
+interface HeartRateSampleRecord {
+  time: string;
+  beatsPerMinute: number;
+}
+
+interface HeartRateRecord {
+  samples?: HeartRateSampleRecord[];
+  metadata?: HealthConnectMetadata;
+}
+
+interface StepsRecord {
+  startTime: string;
+  endTime: string;
+  count?: number;
+  metadata?: HealthConnectMetadata;
+}
+
+interface EnergyValue {
+  inKilocalories?: number;
+}
+
+interface ActiveCaloriesBurnedRecord {
+  startTime: string;
+  endTime: string;
+  energy?: EnergyValue;
+  metadata?: HealthConnectMetadata;
+}
+
+interface ExerciseSessionRecord {
+  startTime: string;
+  endTime: string;
+  metadata?: HealthConnectMetadata;
+}
+
+interface HRVRecord {
+  time: string;
+  heartRateVariabilityMillis: number;
+  metadata?: HealthConnectMetadata;
+}
+
+// ---------------------------------------------------------------------------
+// Type Guards
+// ---------------------------------------------------------------------------
+
+function isSleepSessionRecord(record: unknown): record is SleepSessionRecord {
+  return (
+    typeof record === 'object' &&
+    record !== null &&
+    'startTime' in record &&
+    'endTime' in record
+  );
+}
+
+function isHeartRateRecord(record: unknown): record is HeartRateRecord {
+  return typeof record === 'object' && record !== null;
+}
+
+function isStepsRecord(record: unknown): record is StepsRecord {
+  return (
+    typeof record === 'object' &&
+    record !== null &&
+    'startTime' in record
+  );
+}
+
+function isActiveCaloriesBurnedRecord(
+  record: unknown,
+): record is ActiveCaloriesBurnedRecord {
+  return (
+    typeof record === 'object' &&
+    record !== null &&
+    'startTime' in record
+  );
+}
+
+function isExerciseSessionRecord(
+  record: unknown,
+): record is ExerciseSessionRecord {
+  return (
+    typeof record === 'object' &&
+    record !== null &&
+    'startTime' in record &&
+    'endTime' in record
+  );
+}
+
+function isHRVRecord(record: unknown): record is HRVRecord {
+  return (
+    typeof record === 'object' &&
+    record !== null &&
+    'time' in record &&
+    'heartRateVariabilityMillis' in record
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Health Connect Permission Definitions
 // ---------------------------------------------------------------------------
 
@@ -97,40 +221,65 @@ const REQUIRED_PERMISSIONS: Permission[] = [
 // ---------------------------------------------------------------------------
 
 /**
- * Maps Health Connect sleep stage integers to human-readable labels.
- * Reference: https://developer.android.com/reference/kotlin/androidx/health/connect/client/records/SleepSessionRecord.Companion
+ * Mappe les entiers de stade de sommeil Health Connect vers des libellÃ©s lisibles.
+ * RÃ©fÃ©rence: https://developer.android.com/reference/kotlin/androidx/health/connect/client/records/SleepSessionRecord.Companion
  */
-function mapSleepStage(
-  stage: number,
-): SleepSampleData['value'] {
+function mapSleepStage(stage: number): SleepSampleData['value'] {
   switch (stage) {
-    case 0: return 'UNKNOWN' as any;
-    case 1: return 'AWAKE';
-    case 2: return 'ASLEEP';
-    case 3: return 'INBED';
-    case 4: return 'LIGHT';
-    case 5: return 'DEEP';
-    case 6: return 'REM';
-    default: return 'ASLEEP';
+    case 0:
+      return 'UNKNOWN';
+    case 1:
+      return 'AWAKE';
+    case 2:
+      return 'ASLEEP';
+    case 3:
+      return 'INBED';
+    case 4:
+      return 'LIGHT';
+    case 5:
+      return 'DEEP';
+    case 6:
+      return 'REM';
+    default:
+      return 'ASLEEP';
   }
 }
+
+// ---------------------------------------------------------------------------
+// SDK State Encapsulation
+// ---------------------------------------------------------------------------
+
+/**
+ * Encapsule l'Ã©tat du SDK Health Connect pour permettre la rÃ©initialisation
+ * en cas d'erreur ou lors des tests.
+ */
+const sdkState = {
+  available: null as boolean | null,
+  initialized: false,
+  initPromise: null as Promise<void> | null,
+
+  /** RÃ©initialise l'Ã©tat complet du SDK (utile pour les tests et la gestion d'erreurs). */
+  reset(): void {
+    this.available = null;
+    this.initialized = false;
+    this.initPromise = null;
+  },
+};
 
 // ---------------------------------------------------------------------------
 // SDK Availability Check
 // ---------------------------------------------------------------------------
 
-let _sdkAvailable: boolean | null = null;
-
 async function checkSdkAvailability(): Promise<boolean> {
   if (Platform.OS !== 'android') return false;
-  if (_sdkAvailable !== null) return _sdkAvailable;
+  if (sdkState.available !== null) return sdkState.available;
 
   try {
     const status = await getSdkStatus();
-    _sdkAvailable = status === SdkAvailabilityStatus.SDK_AVAILABLE;
-    return _sdkAvailable;
+    sdkState.available = status === SdkAvailabilityStatus.SDK_AVAILABLE;
+    return sdkState.available;
   } catch {
-    _sdkAvailable = false;
+    sdkState.available = false;
     return false;
   }
 }
@@ -139,44 +288,41 @@ async function checkSdkAvailability(): Promise<boolean> {
 // Initialization
 // ---------------------------------------------------------------------------
 
-let _isInitialized = false;
-let _initPromise: Promise<void> | null = null;
-
 async function ensureInitialized(): Promise<void> {
   if (Platform.OS !== 'android') {
     throw new HealthConnectError(
       'PLATFORM_ERROR',
-      'Health Connect is only available on Android',
+      'Health Connect est uniquement disponible sur Android',
     );
   }
 
-  if (_isInitialized) return;
-  if (_initPromise) return _initPromise;
+  if (sdkState.initialized) return;
+  if (sdkState.initPromise) return sdkState.initPromise;
 
-  _initPromise = (async () => {
+  sdkState.initPromise = (async () => {
     const available = await checkSdkAvailability();
     if (!available) {
-      _initPromise = null;
+      sdkState.reset();
       throw new HealthConnectError(
         'SDK_NOT_INSTALLED',
-        'Health Connect SDK is not available on this device. ' +
-          'The user may need to install the Health Connect app.',
+        "Le SDK Health Connect n'est pas disponible sur cet appareil. " +
+          "L'utilisateur doit peut-Ãªtre installer l'application Health Connect.",
       );
     }
 
-    const initialized = await initialize();
+    const initialized = await initializeSDK();
     if (!initialized) {
-      _initPromise = null;
+      sdkState.reset();
       throw new HealthConnectError(
         'NOT_INITIALIZED',
-        'Health Connect failed to initialize.',
+        "Health Connect n'a pas pu Ãªtre initialisÃ©.",
       );
     }
 
-    _isInitialized = true;
+    sdkState.initialized = true;
   })();
 
-  return _initPromise;
+  return sdkState.initPromise;
 }
 
 // ---------------------------------------------------------------------------
@@ -184,14 +330,14 @@ async function ensureInitialized(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 /**
- * Requests all required Health Connect permissions.
- * Presents the system permission dialog to the user.
+ * Demande toutes les permissions Health Connect requises.
+ * Affiche la boÃ®te de dialogue systÃ¨me de permissions Ã  l'utilisateur.
  */
 export async function requestPermissions(): Promise<Permission[]> {
   if (Platform.OS !== 'android') {
     throw new HealthConnectError(
       'PLATFORM_ERROR',
-      'Health Connect is only available on Android',
+      'Health Connect est uniquement disponible sur Android',
     );
   }
 
@@ -203,10 +349,66 @@ export async function requestPermissions(): Promise<Permission[]> {
   } catch (error) {
     throw new HealthConnectError(
       'PERMISSION_DENIED',
-      'Failed to request Health Connect permissions',
+      'Ãchec de la demande de permissions Health Connect',
       error,
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// Aggregation Helper (pure function, testable independently)
+// ---------------------------------------------------------------------------
+
+interface DayAggregation {
+  steps: number;
+  calories: number;
+  minutes: number;
+}
+
+/**
+ * AgrÃ¨ge les donnÃ©es d'activitÃ© par jour Ã  partir des enregistrements bruts Health Connect.
+ * Fonction pure â ne dÃ©pend d'aucun Ã©tat externe, facilement testable.
+ */
+export function aggregateActivityByDay(
+  stepsRecords: unknown[],
+  caloriesRecords: unknown[],
+  exerciseRecords: unknown[],
+): ActivityData[] {
+  const dayMap = new Map<string, DayAggregation>();
+
+  for (const record of stepsRecords) {
+    if (!isStepsRecord(record)) continue;
+    const day = record.startTime.split('T')[0];
+    const existing = dayMap.get(day) ?? { steps: 0, calories: 0, minutes: 0 };
+    existing.steps += record.count ?? 0;
+    dayMap.set(day, existing);
+  }
+
+  for (const record of caloriesRecords) {
+    if (!isActiveCaloriesBurnedRecord(record)) continue;
+    const day = record.startTime.split('T')[0];
+    const existing = dayMap.get(day) ?? { steps: 0, calories: 0, minutes: 0 };
+    existing.calories += record.energy?.inKilocalories ?? 0;
+    dayMap.set(day, existing);
+  }
+
+  for (const record of exerciseRecords) {
+    if (!isExerciseSessionRecord(record)) continue;
+    const day = record.startTime.split('T')[0];
+    const existing = dayMap.get(day) ?? { steps: 0, calories: 0, minutes: 0 };
+    const durationMs =
+      new Date(record.endTime).getTime() -
+      new Date(record.startTime).getTime();
+    existing.minutes += Math.floor(durationMs / 60000);
+    dayMap.set(day, existing);
+  }
+
+  return Array.from(dayMap.entries()).map(([date, data]) => ({
+    date,
+    steps: data.steps,
+    activeCalories: data.calories,
+    activeMinutes: data.minutes,
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -230,8 +432,10 @@ async function fetchSleepSamples(
 
     const samples: SleepSampleData[] = [];
 
-    for (const record of records as any[]) {
-      // Each SleepSession may have multiple stages
+    for (const rawRecord of records) {
+      if (!isSleepSessionRecord(rawRecord)) continue;
+      const record: SleepSessionRecord = rawRecord;
+
       if (record.stages && Array.isArray(record.stages)) {
         for (const stage of record.stages) {
           samples.push({
@@ -243,7 +447,7 @@ async function fetchSleepSamples(
           });
         }
       } else {
-        // Session-level record without stages
+        // Enregistrement de session sans stades dÃ©taillÃ©s
         samples.push({
           startDate: record.startTime,
           endDate: record.endTime,
@@ -258,7 +462,7 @@ async function fetchSleepSamples(
   } catch (error) {
     throw new HealthConnectError(
       'FETCH_FAILED',
-      'Failed to fetch sleep data from Health Connect',
+      'Ãchec de la rÃ©cupÃ©ration des donnÃ©es de sommeil depuis Health Connect',
       error,
     );
   }
@@ -281,7 +485,10 @@ async function fetchHeartRate(
 
     const samples: HeartRateSample[] = [];
 
-    for (const record of records as any[]) {
+    for (const rawRecord of records) {
+      if (!isHeartRateRecord(rawRecord)) continue;
+      const record: HeartRateRecord = rawRecord;
+
       if (record.samples && Array.isArray(record.samples)) {
         for (const sample of record.samples) {
           samples.push({
@@ -298,7 +505,7 @@ async function fetchHeartRate(
   } catch (error) {
     throw new HealthConnectError(
       'FETCH_FAILED',
-      'Failed to fetch heart rate data from Health Connect',
+      'Ãchec de la rÃ©cupÃ©ration des donnÃ©es de frÃ©quence cardiaque depuis Health Connect',
       error,
     );
   }
@@ -311,6 +518,8 @@ async function fetchHRV(
   await ensureInitialized();
 
   try {
+    // Utilisation de 'HeartRateVariabilityRmssd' â type officiel dans Health Connect SDK
+    // Ref: https://developer.android.com/reference/kotlin/androidx/health/connect/client/records/HeartRateVariabilityRmssdRecord
     const { records } = await readRecords('HeartRateVariabilityRmssd', {
       timeRangeFilter: {
         operator: 'between',
@@ -319,16 +528,24 @@ async function fetchHRV(
       },
     });
 
-    return (records as any[]).map((r) => ({
-      startDate: r.time,
-      endDate: r.time,
-      value: r.heartRateVariabilityMillis,
-      sourceName: r.metadata?.dataOrigin ?? '',
-    }));
+    const samples: HRVSample[] = [];
+
+    for (const rawRecord of records) {
+      if (!isHRVRecord(rawRecord)) continue;
+      const record: HRVRecord = rawRecord;
+      samples.push({
+        startDate: record.time,
+        endDate: record.time,
+        value: record.heartRateVariabilityMillis,
+        sourceName: record.metadata?.dataOrigin ?? '',
+      });
+    }
+
+    return samples;
   } catch (error) {
     throw new HealthConnectError(
       'FETCH_FAILED',
-      'Failed to fetch HRV data from Health Connect',
+      'Ãchec de la rÃ©cupÃ©ration des donnÃ©es HRV depuis Health Connect',
       error,
     );
   }
@@ -353,46 +570,15 @@ async function fetchActivityData(
       readRecords('ExerciseSession', { timeRangeFilter }),
     ]);
 
-    // Aggregate by day
-    const dayMap = new Map<
-      string,
-      { steps: number; calories: number; minutes: number }
-    >();
-
-    for (const record of stepsResult.records as any[]) {
-      const day = record.startTime.split('T')[0];
-      const existing = dayMap.get(day) ?? { steps: 0, calories: 0, minutes: 0 };
-      existing.steps += record.count ?? 0;
-      dayMap.set(day, existing);
-    }
-
-    for (const record of caloriesResult.records as any[]) {
-      const day = record.startTime.split('T')[0];
-      const existing = dayMap.get(day) ?? { steps: 0, calories: 0, minutes: 0 };
-      existing.calories += record.energy?.inKilocalories ?? 0;
-      dayMap.set(day, existing);
-    }
-
-    for (const record of exerciseResult.records as any[]) {
-      const day = record.startTime.split('T')[0];
-      const existing = dayMap.get(day) ?? { steps: 0, calories: 0, minutes: 0 };
-      const durationMs =
-        new Date(record.endTime).getTime() -
-        new Date(record.startTime).getTime();
-      existing.minutes += Math.floor(durationMs / 60000);
-      dayMap.set(day, existing);
-    }
-
-    return Array.from(dayMap.entries()).map(([date, data]) => ({
-      date,
-      steps: data.steps,
-      activeCalories: data.calories,
-      activeMinutes: data.minutes,
-    }));
+    return aggregateActivityByDay(
+      stepsResult.records,
+      caloriesResult.records,
+      exerciseResult.records,
+    );
   } catch (error) {
     throw new HealthConnectError(
       'FETCH_FAILED',
-      'Failed to fetch activity data from Health Connect',
+      "Ãchec de la rÃ©cupÃ©ration des donnÃ©es d'activitÃ© depuis Health Connect",
       error,
     );
   }
@@ -403,12 +589,12 @@ async function fetchActivityData(
 // ---------------------------------------------------------------------------
 
 /**
- * Sets up WorkManager periodic sync for Health Connect data.
- * This is a placeholder — integrate with react-native-background-actions
- * or a native WorkManager module for production use.
+ * Configure la synchronisation pÃ©riodique WorkManager pour les donnÃ©es Health Connect.
+ * Il s'agit d'un placeholder â Ã  intÃ©grer avec react-native-background-actions
+ * ou un module WorkManager natif pour un usage en production.
  *
- * @param intervalMinutes - Sync interval in minutes (minimum 15 on Android)
- * @param onSync - Async callback invoked during background sync
+ * @param intervalMinutes - Intervalle de synchronisation en minutes (minimum 15 sur Android)
+ * @param onSync - Callback asynchrone invoquÃ© lors de la synchronisation en arriÃ¨re-plan
  */
 export function setupWorkManagerSync(
   intervalMinutes: number = 60,
@@ -416,20 +602,25 @@ export function setupWorkManagerSync(
 ): void {
   if (Platform.OS !== 'android') return;
 
-  // Wire up with your WorkManager native module or react-native-background-actions:
+  // Ã connecter avec votre module natif WorkManager ou react-native-background-actions:
   // BackgroundService.start(onSync, {
   //   taskName: 'HealthConnectSync',
   //   taskTitle: 'VIVE Health Sync',
-  //   taskDesc: 'Syncing your health data',
+  //   taskDesc: 'Synchronisation de vos donnÃ©es de santÃ©',
   //   taskIcon: { name: 'ic_launcher', type: 'mipmap' },
   //   color: '#7C3AED',
   //   parameters: { delay: intervalMinutes * 60 * 1000 },
   // });
 
-  console.log(
-    `[VIVE HealthConnect] WorkManager sync configured for every ${intervalMinutes}min. ` +
-      `Wire up with your background task module.`,
-  );
+  if (__DEV__) {
+    console.log(
+      `[VIVE HealthConnect] Synchronisation WorkManager configurÃ©e toutes les ${intervalMinutes}min. ` +
+        `Ã connecter avec votre module de tÃ¢che en arriÃ¨re-plan.`,
+    );
+  }
+
+  // RÃ©fÃ©rence Ã  onSync pour Ã©viter le warning TypeScript de paramÃ¨tre inutilisÃ©
+  void onSync;
 }
 
 // ---------------------------------------------------------------------------
@@ -437,7 +628,10 @@ export function setupWorkManagerSync(
 // ---------------------------------------------------------------------------
 
 /**
- * React Query hook for Health Connect sleep data.
+ * Hook React Query pour les donnÃ©es de sommeil Health Connect.
+ *
+ * @note startDate et endDate doivent Ãªtre mÃ©moÃ¯sÃ©s par le composant appelant
+ * (via useMemo ou useState) pour Ã©viter des re-dÃ©clenchements de requÃªtes inutiles.
  */
 export function useSleepData(
   startDate: Date,
@@ -457,7 +651,7 @@ export function useSleepData(
       if (Platform.OS !== 'android') {
         throw new HealthConnectError(
           'PLATFORM_ERROR',
-          'Health Connect is only available on Android',
+          'Health Connect est uniquement disponible sur Android',
         );
       }
       return fetchSleepSamples(startDate, endDate);
@@ -479,7 +673,10 @@ export function useSleepData(
 }
 
 /**
- * React Query hook for Health Connect heart rate data.
+ * Hook React Query pour les donnÃ©es de frÃ©quence cardiaque Health Connect.
+ *
+ * @note startDate et endDate doivent Ãªtre mÃ©moÃ¯sÃ©s par le composant appelant
+ * (via useMemo ou useState) pour Ã©viter des re-dÃ©clenchements de requÃªtes inutiles.
  */
 export function useHeartRate(
   startDate: Date,
@@ -499,7 +696,7 @@ export function useHeartRate(
       if (Platform.OS !== 'android') {
         throw new HealthConnectError(
           'PLATFORM_ERROR',
-          'Health Connect is only available on Android',
+          'Health Connect est uniquement disponible sur Android',
         );
       }
       return fetchHeartRate(startDate, endDate);
@@ -521,7 +718,10 @@ export function useHeartRate(
 }
 
 /**
- * React Query hook for Health Connect HRV data.
+ * Hook React Query pour les donnÃ©es HRV Health Connect.
+ *
+ * @note startDate et endDate doivent Ãªtre mÃ©moÃ¯sÃ©s par le composant appelant
+ * (via useMemo ou useState) pour Ã©viter des re-dÃ©clenchements de requÃªtes inutiles.
  */
 export function useHRV(
   startDate: Date,
@@ -541,7 +741,7 @@ export function useHRV(
       if (Platform.OS !== 'android') {
         throw new HealthConnectError(
           'PLATFORM_ERROR',
-          'Health Connect is only available on Android',
+          'Health Connect est uniquement disponible sur Android',
         );
       }
       return fetchHRV(startDate, endDate);
@@ -563,7 +763,10 @@ export function useHRV(
 }
 
 /**
- * React Query hook for Health Connect activity data.
+ * Hook React Query pour les donnÃ©es d'activitÃ© Health Connect.
+ *
+ * @note startDate et endDate doivent Ãªtre mÃ©moÃ¯sÃ©s par le composant appelant
+ * (via useMemo ou useState) pour Ã©viter des re-dÃ©clenchements de requÃªtes inutiles.
  */
 export function useActivityData(
   startDate: Date,
@@ -583,7 +786,7 @@ export function useActivityData(
       if (Platform.OS !== 'android') {
         throw new HealthConnectError(
           'PLATFORM_ERROR',
-          'Health Connect is only available on Android',
+          'Health Connect est uniquement disponible sur Android',
         );
       }
       return fetchActivityData(startDate, endDate);
@@ -605,12 +808,17 @@ export function useActivityData(
 }
 
 /**
- * Convenience hook that initializes Health Connect and exposes helper utilities.
+ * Hook de commoditÃ© qui initialise Health Connect et expose des utilitaires.
  */
 export function useHealthConnect() {
   const queryClient = useQueryClient();
 
-  const initialize = useCallback(async () => {
+  /**
+   * Initialise Health Connect et invalide toutes les queries existantes.
+   * RenommÃ© en 'initializeHealthConnect' pour Ã©viter le shadowing de l'import 'initialize'
+   * du SDK react-native-health-connect.
+   */
+  const initializeHealthConnect = useCallback(async () => {
     await requestPermissions();
     await queryClient.invalidateQueries({ queryKey: ['healthconnect'] });
   }, [queryClient]);
@@ -619,10 +827,12 @@ export function useHealthConnect() {
 
   return {
     isAvailable,
-    initialize,
+    initialize: initializeHealthConnect,
     requestPermissions,
     setupWorkManagerSync,
     checkSdkAvailability,
+    /** RÃ©initialise l'Ã©tat interne du SDK (utile pour les tests). */
+    resetSdkState: () => sdkState.reset(),
   };
 }
 

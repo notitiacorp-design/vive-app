@@ -23,8 +23,22 @@ import Purchases, {
 } from 'react-native-purchases';
 
 // ---------------------------------------------------------------------------
-// Configuration — provide via env/config
+// Configuration â provide via env/config
 // ---------------------------------------------------------------------------
+
+// [Correction C] Validation des clÃ©s API au dÃ©marrage pour Ã©viter une configuration silencieuse avec une clÃ© vide
+function getValidatedApiKey(key: string | undefined, platform: string): string {
+  if (!key || key.trim() === '') {
+    const message = `[VIVE RevenueCat] ClÃ© API RevenueCat manquante pour la plateforme ${platform}. DÃ©finissez la variable d'environnement correspondante.`;
+    if (__DEV__) {
+      throw new Error(message);
+    } else {
+      console.error(message);
+    }
+    return '';
+  }
+  return key;
+}
 
 const RC_API_KEY_IOS = process.env.REVENUECAT_IOS_KEY ?? '';
 const RC_API_KEY_ANDROID = process.env.REVENUECAT_ANDROID_KEY ?? '';
@@ -85,20 +99,19 @@ export interface RestoreResult {
 let _isConfigured = false;
 
 /**
- * Configures the Purchases SDK. Safe to call multiple times (idempotent).
- * Pass `appUserId` to associate purchases with your backend user.
- *
- * @param appUserId - Optional backend user ID for cross-platform purchase tracking
+ * Configure le SDK Purchases une seule fois (idempotent).
+ * N'accepte plus d'appUserId â utiliser identifyUser() pour associer un utilisateur.
  */
-export function configurePurchases(appUserId?: string): void {
+export function configurePurchases(): void {
   if (_isConfigured) return;
 
-  const apiKey = Platform.OS === 'ios' ? RC_API_KEY_IOS : RC_API_KEY_ANDROID;
+  // [Correction C] Validation de la clÃ© API avant configuration
+  const rawApiKey = Platform.OS === 'ios' ? RC_API_KEY_IOS : RC_API_KEY_ANDROID;
+  const platform = Platform.OS === 'ios' ? 'iOS' : 'Android';
+  const apiKey = getValidatedApiKey(rawApiKey, platform);
 
   if (!apiKey) {
-    console.warn(
-      '[VIVE RevenueCat] API key not configured. Set REVENUECAT_IOS_KEY / REVENUECAT_ANDROID_KEY.',
-    );
+    // getValidatedApiKey a dÃ©jÃ  loggÃ© l'erreur, on ne configure pas le SDK
     return;
   }
 
@@ -106,10 +119,11 @@ export function configurePurchases(appUserId?: string): void {
     Purchases.setLogLevel(LOG_LEVEL.DEBUG);
   }
 
-  Purchases.configure({ apiKey, appUserID: appUserId });
+  // [Correction B] On ne passe plus d'appUserId ici â utiliser identifyUser() aprÃ¨s connexion
+  Purchases.configure({ apiKey });
   _isConfigured = true;
 
-  console.log('[VIVE RevenueCat] Purchases configured successfully.');
+  console.log('[VIVE RevenueCat] SDK Purchases configurÃ© avec succÃ¨s.');
 }
 
 // ---------------------------------------------------------------------------
@@ -145,30 +159,41 @@ function deriveEntitlements(customerInfo: CustomerInfo | null): EntitlementStatu
 }
 
 // ---------------------------------------------------------------------------
-// Main RevenueCat Hook
+// Sub-hooks (Correction D) â sÃ©paration des responsabilitÃ©s
 // ---------------------------------------------------------------------------
 
 /**
- * Primary RevenueCat hook.
- * Initializes the SDK on mount, listens for customerInfo updates,
- * and exposes subscription status.
- *
- * @param appUserId - Optional backend user ID
+ * useRevenueCatInit â responsabilitÃ© unique : configuration initiale du SDK (une seule fois).
+ * [Correction B] La configuration ne se fait qu'au montage, indÃ©pendamment de l'utilisateur.
  */
-export function useRevenueCat(appUserId?: string): RevenueCatState {
+export function useRevenueCatInit(): void {
+  useEffect(() => {
+    configurePurchases();
+  }, []); // Aucune dÃ©pendance : exÃ©cutÃ© une seule fois au montage
+}
+
+/**
+ * useCustomerInfo â responsabilitÃ© unique : Ã©coute des mises Ã  jour en temps rÃ©el et rÃ©cupÃ©ration des donnÃ©es.
+ * [Correction E] Utilise useRef pour stocker le listener et garantit la suppression avant d'en ajouter un nouveau.
+ */
+export function useCustomerInfo(): CustomerInfo | null {
   const queryClient = useQueryClient();
+  // [Correction E] RÃ©fÃ©rence stable au listener pour Ã©viter les listeners multiples
   const listenerRef = useRef<((info: CustomerInfo) => void) | null>(null);
 
-  // Configure SDK on mount
   useEffect(() => {
-    configurePurchases(appUserId);
+    // [Correction E] Supprimer l'Ã©ventuel listener prÃ©cÃ©dent avant d'en crÃ©er un nouveau
+    if (listenerRef.current) {
+      Purchases.removeCustomerInfoUpdateListener(listenerRef.current);
+      listenerRef.current = null;
+    }
 
-    // Register listener for real-time customer info updates
-    listenerRef.current = (info: CustomerInfo) => {
+    const listener = (info: CustomerInfo) => {
       queryClient.setQueryData<CustomerInfo>(RC_QUERY_KEYS.customerInfo, info);
     };
 
-    Purchases.addCustomerInfoUpdateListener(listenerRef.current);
+    listenerRef.current = listener;
+    Purchases.addCustomerInfoUpdateListener(listener);
 
     return () => {
       if (listenerRef.current) {
@@ -176,15 +201,15 @@ export function useRevenueCat(appUserId?: string): RevenueCatState {
         listenerRef.current = null;
       }
     };
-  }, [appUserId, queryClient]);
+  // queryClient est stable par conception dans TanStack Query, mais on le liste pour la rigueur
+  }, [queryClient]);
 
-  const { data: customerInfo, isSuccess } = useQuery<CustomerInfo, PurchasesError>({
+  const { data: customerInfo } = useQuery<CustomerInfo, PurchasesError>({
     queryKey: RC_QUERY_KEYS.customerInfo,
     queryFn: () => Purchases.getCustomerInfo(),
     staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
     retry: (failureCount, error) => {
-      // Don't retry on network-independent errors
       if (
         (error as PurchasesError).code ===
         PURCHASES_ERROR_CODE.CONFIGURATION_ERROR
@@ -195,11 +220,76 @@ export function useRevenueCat(appUserId?: string): RevenueCatState {
     },
   });
 
-  const entitlements = deriveEntitlements(customerInfo ?? null);
+  return customerInfo ?? null;
+}
+
+/**
+ * useEntitlements â responsabilitÃ© unique : dÃ©rivation des entitlements depuis customerInfo.
+ */
+export function useEntitlements(customerInfo: CustomerInfo | null): EntitlementStatus {
+  return deriveEntitlements(customerInfo);
+}
+
+// ---------------------------------------------------------------------------
+// Main RevenueCat Hook (orchestrateur lÃ©ger â Correction D)
+// ---------------------------------------------------------------------------
+
+/**
+ * Hook principal RevenueCat.
+ * Orchestre useRevenueCatInit, useCustomerInfo et useEntitlements.
+ * [Correction B] La configuration du SDK et l'identification de l'utilisateur sont maintenant sÃ©parÃ©es.
+ *
+ * @param appUserId - Optionnel : ID utilisateur backend. Utiliser identifyUser() aprÃ¨s connexion.
+ */
+export function useRevenueCat(appUserId?: string): RevenueCatState {
+  // [Correction D] DÃ©lÃ¨gue l'initialisation Ã  useRevenueCatInit
+  useRevenueCatInit();
+
+  // [Correction B] Gestion du changement d'utilisateur via logIn/logOut uniquement
+  const previousUserIdRef = useRef<string | undefined>(undefined);
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (!_isConfigured) return;
+
+    const previousUserId = previousUserIdRef.current;
+
+    if (appUserId && appUserId !== previousUserId) {
+      // Nouvel utilisateur connectÃ© â utiliser logIn, pas reconfigure
+      Purchases.logIn(appUserId)
+        .then(({ customerInfo }) => {
+          queryClient.setQueryData<CustomerInfo>(RC_QUERY_KEYS.customerInfo, customerInfo);
+          console.log(`[VIVE RevenueCat] Utilisateur identifiÃ© : ${appUserId}`);
+        })
+        .catch((error: PurchasesError) => {
+          console.error(`[VIVE RevenueCat] Ãchec de l'identification : [${error.code}] ${error.message}`);
+        });
+    } else if (!appUserId && previousUserId) {
+      // Utilisateur dÃ©connectÃ© â utiliser logOut
+      Purchases.logOut()
+        .then((customerInfo) => {
+          queryClient.setQueryData<CustomerInfo>(RC_QUERY_KEYS.customerInfo, customerInfo);
+          console.log('[VIVE RevenueCat] Utilisateur dÃ©connectÃ©, retour en mode anonyme.');
+        })
+        .catch((error: PurchasesError) => {
+          console.error(`[VIVE RevenueCat] Ãchec de la dÃ©connexion : [${error.code}] ${error.message}`);
+        });
+    }
+
+    previousUserIdRef.current = appUserId;
+  }, [appUserId, queryClient]);
+
+  // [Correction D] DÃ©lÃ¨gue la rÃ©cupÃ©ration des donnÃ©es Ã  useCustomerInfo
+  const customerInfo = useCustomerInfo();
+
+  // [Correction D] DÃ©lÃ¨gue la dÃ©rivation Ã  useEntitlements
+  const entitlements = useEntitlements(customerInfo);
+
+  const isReady = customerInfo !== null;
 
   return {
-    isReady: isSuccess,
-    customerInfo: customerInfo ?? null,
+    isReady,
+    customerInfo,
     entitlements,
     isPremium: entitlements.isPremium,
     isElite: entitlements.isElite,
@@ -211,8 +301,8 @@ export function useRevenueCat(appUserId?: string): RevenueCatState {
 // ---------------------------------------------------------------------------
 
 /**
- * Mutation hook for purchasing a RevenueCat package.
- * On success, updates the cached customerInfo and invalidates queries.
+ * Hook de mutation pour acheter un package RevenueCat.
+ * En cas de succÃ¨s, met Ã  jour le cache customerInfo et invalide les requÃªtes.
  *
  * @example
  * const { mutate: purchase, isPending } = usePurchase();
@@ -236,14 +326,13 @@ export function usePurchase(): UseMutationResult<
         RC_QUERY_KEYS.customerInfo,
         customerInfo,
       );
-      // Invalidate to ensure fresh data on next read
       queryClient.invalidateQueries({ queryKey: RC_QUERY_KEYS.customerInfo });
     },
     onError: (error: PurchasesError) => {
-      // USER_CANCELLED is expected — don't log as error
+      // L'annulation par l'utilisateur est attendue â ne pas logger comme erreur
       if (error.code !== PURCHASES_ERROR_CODE.PURCHASE_CANCELLED_ERROR) {
         console.error(
-          `[VIVE RevenueCat] Purchase failed: [${error.code}] ${error.message}`,
+          `[VIVE RevenueCat] Achat Ã©chouÃ© : [${error.code}] ${error.message}`,
         );
       }
     },
@@ -255,8 +344,8 @@ export function usePurchase(): UseMutationResult<
 // ---------------------------------------------------------------------------
 
 /**
- * Mutation hook to restore previously purchased subscriptions.
- * Updates cached customerInfo and derives restored entitlement keys.
+ * Hook de mutation pour restaurer les abonnements prÃ©cÃ©demment achetÃ©s.
+ * Met Ã  jour le cache customerInfo et dÃ©rive les clÃ©s d'entitlements restaurÃ©s.
  */
 export function useRestorePurchases(): UseMutationResult<
   RestoreResult,
@@ -282,7 +371,7 @@ export function useRestorePurchases(): UseMutationResult<
     },
     onError: (error: PurchasesError) => {
       console.error(
-        `[VIVE RevenueCat] Restore failed: [${error.code}] ${error.message}`,
+        `[VIVE RevenueCat] Restauration Ã©chouÃ©e : [${error.code}] ${error.message}`,
       );
     },
   });
@@ -293,8 +382,8 @@ export function useRestorePurchases(): UseMutationResult<
 // ---------------------------------------------------------------------------
 
 /**
- * React Query hook that fetches available RevenueCat offerings.
- * Offerings are cached for 10 minutes to avoid excessive API calls.
+ * Hook React Query pour rÃ©cupÃ©rer les offres RevenueCat disponibles.
+ * Les offres sont mises en cache pendant 10 minutes pour limiter les appels API.
  */
 export function useOfferings(
   options: { enabled?: boolean } = {},
@@ -305,7 +394,7 @@ export function useOfferings(
     queryKey: RC_QUERY_KEYS.offerings,
     queryFn: () => Purchases.getOfferings(),
     enabled,
-    staleTime: 10 * 60 * 1000, // Offerings change infrequently
+    staleTime: 10 * 60 * 1000, // Les offres changent rarement
     gcTime: 60 * 60 * 1000,
     retry: (failureCount, error) => {
       if (
@@ -324,10 +413,10 @@ export function useOfferings(
 // ---------------------------------------------------------------------------
 
 /**
- * Associates the RevenueCat anonymous user with a backend user ID.
- * Call this after sign-in.
+ * Associe l'utilisateur anonyme RevenueCat Ã  un ID utilisateur backend.
+ * Ã appeler aprÃ¨s la connexion de l'utilisateur.
  *
- * @param userId - Your backend user ID
+ * @param userId - Votre identifiant utilisateur backend
  */
 export async function identifyUser(userId: string): Promise<CustomerInfo> {
   const { customerInfo } = await Purchases.logIn(userId);
@@ -335,8 +424,8 @@ export async function identifyUser(userId: string): Promise<CustomerInfo> {
 }
 
 /**
- * Logs out the current RevenueCat user (reverts to anonymous).
- * Call this after sign-out.
+ * DÃ©connecte l'utilisateur RevenueCat courant (retour en mode anonyme).
+ * Ã appeler aprÃ¨s la dÃ©connexion de l'utilisateur.
  */
 export async function logoutUser(): Promise<CustomerInfo> {
   const customerInfo = await Purchases.logOut();
@@ -344,17 +433,9 @@ export async function logoutUser(): Promise<CustomerInfo> {
 }
 
 // ---------------------------------------------------------------------------
-// Exports
+// Re-exports de types tiers utiles
 // ---------------------------------------------------------------------------
 
-export {
-  useRevenueCat,
-  usePurchase,
-  useRestorePurchases,
-  useOfferings,
-  configurePurchases,
-  identifyUser,
-  logoutUser,
-};
-
+// [Correction A] Suppression du bloc 'export {}' redondant â les fonctions sont dÃ©jÃ  exportÃ©es
+// avec 'export function' et 'export async function' ci-dessus.
 export type { CustomerInfo, Offerings, PurchasesPackage, PurchasesError };

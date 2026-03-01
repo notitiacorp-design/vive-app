@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,17 +8,18 @@ import {
   StatusBar,
   ActivityIndicator,
   Alert,
+  StyleSheet,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useMutation } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// âââ Types ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
-type BoxStackParamList = {
+export type BoxStackParamList = {
   NextBox: undefined;
   BoxValidation: undefined;
   BoxHistory: undefined;
@@ -48,46 +49,20 @@ interface BoxValidationPayload {
   validated_at: string;
 }
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const HERO_MODULE: HeroModule = {
-  id: 'hero-001',
-  name: 'Cohérence Cardiaque',
-  category: 'Respiration & Stress',
-  description:
-    'Programme de 21 jours pour maîtriser votre système nerveux autonome. 5 minutes par jour suffisent pour transformer votre résilience au stress.',
-  duration: '21 jours',
-  level: 'Débutant',
-};
-
-const MISSIONS: Mission[] = [
-  {
-    id: 'mission-1',
-    title: 'Pratiquer chaque matin',
-    description: '5 min de cohérence cardiaque avant 9h, 21 jours consécutifs',
-    icon: '🌅',
-  },
-  {
-    id: 'mission-2',
-    title: 'Tracker mes émotions',
-    description: 'Enregistrer mon état émotionnel dans VIVE après chaque session',
-    icon: '📊',
-  },
-  {
-    id: 'mission-3',
-    title: 'Partager mon avancée',
-    description: 'Publier une réflexion dans la communauté VIVE à J+7 et J+21',
-    icon: '✦',
-  },
-];
-
-// ─── Supabase mutation ────────────────────────────────────────────────────────
+// âââ Service ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 async function saveBoxValidation(payload: BoxValidationPayload): Promise<void> {
+  if (!payload.hero_module_id || payload.hero_module_id.trim() === '') {
+    throw new Error('Module hÃ©ros invalide');
+  }
+  if (!payload.missions_accepted || payload.missions_accepted.length === 0) {
+    throw new Error('Vous devez accepter au moins une mission');
+  }
+
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) throw new Error('Non authentifié');
+  if (!user) throw new Error('Non authentifiÃ©');
 
   const { error } = await supabase.from('box_validations').insert({
     user_id: user.id,
@@ -100,108 +75,455 @@ async function saveBoxValidation(payload: BoxValidationPayload): Promise<void> {
   if (error) throw error;
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+// âââ Hook âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+
+function useBoxValidation() {
+  const [heroModule, setHeroModule] = useState<HeroModule | null>(null);
+  const [missions, setMissions] = useState<Mission[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        setLoading(true);
+        setFetchError(null);
+
+        const { data: moduleData, error: moduleError } = await supabase
+          .from('hero_modules')
+          .select('id, name, category, description, duration, level')
+          .limit(1)
+          .single();
+
+        if (moduleError) throw moduleError;
+        if (moduleData) setHeroModule(moduleData as HeroModule);
+
+        const { data: missionsData, error: missionsError } = await supabase
+          .from('missions')
+          .select('id, title, description, icon');
+
+        if (missionsError) throw missionsError;
+        if (missionsData) setMissions(missionsData as Mission[]);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Erreur lors du chargement';
+        setFetchError(message);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchData();
+  }, []);
+
+  return { heroModule, missions, loading, fetchError };
+}
+
+// âââ Styles âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#080810',
+  },
+  safeArea: {
+    flex: 1,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1C1C28',
+  },
+  backButton: {
+    marginRight: 14,
+    padding: 4,
+  },
+  backButtonText: {
+    color: '#A8A8C0',
+    fontSize: 20,
+  },
+  headerTitle: {
+    color: '#E8E8F0',
+    fontSize: 17,
+    fontWeight: '700',
+    letterSpacing: -0.3,
+  },
+  headerSubtitle: {
+    color: '#A8A8C0',
+    fontSize: 12,
+    marginTop: 1,
+  },
+  sectionLabel: {
+    color: '#A8A8C0',
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 1.6,
+    textTransform: 'uppercase',
+    marginLeft: 20,
+    marginBottom: 12,
+  },
+  heroCard: {
+    backgroundColor: '#111118',
+    borderRadius: 20,
+    overflow: 'hidden',
+    marginHorizontal: 20,
+    borderWidth: 1,
+    borderColor: '#3D8BFF33',
+  },
+  heroGradientBar: {
+    height: 4,
+  },
+  heroCardContent: {
+    padding: 20,
+  },
+  categoryBadge: {
+    backgroundColor: '#3D8BFF1A',
+    borderWidth: 1,
+    borderColor: '#3D8BFF44',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    alignSelf: 'flex-start',
+    marginBottom: 12,
+  },
+  categoryBadgeText: {
+    color: '#3D8BFF',
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+  },
+  heroRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  heroIconContainer: {
+    width: 72,
+    height: 72,
+    borderRadius: 16,
+    backgroundColor: '#1C1C28',
+    borderWidth: 1,
+    borderColor: '#3D8BFF22',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+    flexShrink: 0,
+  },
+  heroIconText: {
+    fontSize: 28,
+  },
+  heroTextContainer: {
+    flex: 1,
+  },
+  heroName: {
+    color: '#E8E8F0',
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 4,
+    letterSpacing: -0.3,
+  },
+  heroDescription: {
+    color: '#A8A8C0',
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    marginTop: 16,
+    gap: 10,
+  },
+  metaItem: {
+    flex: 1,
+    backgroundColor: '#1C1C28',
+    borderRadius: 10,
+    padding: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  metaText: {
+    color: '#A8A8C0',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  mysteryContainer: {
+    marginHorizontal: 20,
+  },
+  mysteryTitle: {
+    color: '#E8E8F0',
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 12,
+    letterSpacing: -0.2,
+  },
+  mysteryPressable: {
+    height: 120,
+  },
+  mysteryCardBase: {
+    width: '100%',
+    height: 120,
+    borderRadius: 16,
+    position: 'absolute',
+    backfaceVisibility: 'hidden',
+  },
+  mysteryFront: {
+    backgroundColor: '#1C1C28',
+    borderWidth: 1.5,
+    borderColor: '#3D8BFF44',
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mysteryFrontIcon: {
+    color: '#3D8BFF',
+    fontSize: 28,
+    marginBottom: 6,
+  },
+  mysteryFrontText: {
+    color: '#A8A8C0',
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  mysteryFrontSubText: {
+    color: '#A8A8C060',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  mysteryBack: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#3D8BFF55',
+  },
+  mysteryBackGradient: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    flexDirection: 'row',
+    gap: 14,
+  },
+  mysteryBackIconContainer: {
+    width: 52,
+    height: 52,
+    borderRadius: 14,
+    backgroundColor: '#3D8BFF22',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#3D8BFF44',
+  },
+  mysteryBackTextContainer: {
+    flex: 1,
+  },
+  mysteryBackTitle: {
+    color: '#E8E8F0',
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 3,
+  },
+  mysteryBackSubtitle: {
+    color: '#A8A8C0',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  surpriseBadge: {
+    backgroundColor: '#3D8BFF22',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    alignSelf: 'flex-start',
+    marginTop: 6,
+  },
+  surpriseBadgeText: {
+    color: '#3D8BFF',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  missionItem: {
+    borderRadius: 14,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    borderWidth: 1,
+    marginBottom: 10,
+  },
+  missionIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#1C1C28',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  missionTextContainer: {
+    flex: 1,
+  },
+  missionTitle: {
+    color: '#E8E8F0',
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 3,
+  },
+  missionDescription: {
+    color: '#A8A8C0',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 7,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    marginTop: 2,
+  },
+  checkboxCheck: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  missionsSection: {
+    marginTop: 28,
+    paddingHorizontal: 20,
+  },
+  missionsSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  missionsSectionLabel: {
+    color: '#A8A8C0',
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 1.6,
+    textTransform: 'uppercase',
+  },
+  missionsCountBadge: {
+    backgroundColor: '#3D8BFF',
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginLeft: 8,
+  },
+  missionsCountText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  missionsSubtitle: {
+    color: '#A8A8C0',
+    fontSize: 12,
+    marginBottom: 16,
+    lineHeight: 18,
+  },
+  ctaContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#080810',
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#1C1C28',
+  },
+  ctaHint: {
+    color: '#A8A8C0',
+    fontSize: 12,
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  ctaGradient: {
+    borderRadius: 16,
+    paddingVertical: 17,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  ctaText: {
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    color: '#A8A8C0',
+    marginTop: 12,
+    fontSize: 14,
+  },
+  errorContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  errorText: {
+    color: '#FF6B6B',
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  retryButton: {
+    backgroundColor: '#3D8BFF',
+    borderRadius: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+  },
+  retryButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  mysterySlotSection: {
+    marginTop: 28,
+    marginBottom: 8,
+  },
+});
+
+// âââ Sub-components âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 function HeroModuleCard({ module }: { module: HeroModule }) {
   return (
-    <View
-      style={{
-        backgroundColor: '#111118',
-        borderRadius: 20,
-        overflow: 'hidden',
-        marginHorizontal: 20,
-        borderWidth: 1,
-        borderColor: '#3D8BFF33',
-      }}
-    >
-      {/* Top gradient bar */}
+    <View style={styles.heroCard}>
       <LinearGradient
         colors={['#3D8BFF', '#1A3A6B']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
-        style={{ height: 4 }}
+        style={styles.heroGradientBar}
       />
-      <View style={{ padding: 20 }}>
-        {/* Category badge */}
-        <View
-          style={{
-            backgroundColor: '#3D8BFF1A',
-            borderWidth: 1,
-            borderColor: '#3D8BFF44',
-            borderRadius: 8,
-            paddingHorizontal: 10,
-            paddingVertical: 3,
-            alignSelf: 'flex-start',
-            marginBottom: 12,
-          }}
-        >
-          <Text style={{ color: '#3D8BFF', fontSize: 10, fontWeight: '600', letterSpacing: 1.2, textTransform: 'uppercase' }}>
-            {module.category}
-          </Text>
+      <View style={styles.heroCardContent}>
+        <View style={styles.categoryBadge}>
+          <Text style={styles.categoryBadgeText}>{module.category}</Text>
         </View>
-
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-          {/* Image placeholder */}
-          <View
-            style={{
-              width: 72,
-              height: 72,
-              borderRadius: 16,
-              backgroundColor: '#1C1C28',
-              borderWidth: 1,
-              borderColor: '#3D8BFF22',
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginRight: 14,
-              flexShrink: 0,
-            }}
-          >
-            <Text style={{ fontSize: 28 }}>🫀</Text>
+        <View style={styles.heroRow}>
+          <View style={styles.heroIconContainer}>
+            <Text style={styles.heroIconText}>ð«</Text>
           </View>
-          <View style={{ flex: 1 }}>
-            <Text
-              style={{
-                color: '#E8E8F0',
-                fontSize: 18,
-                fontWeight: '700',
-                marginBottom: 4,
-                letterSpacing: -0.3,
-              }}
-            >
-              {module.name}
-            </Text>
-            <Text style={{ color: '#A8A8C0', fontSize: 13, lineHeight: 19 }}>
-              {module.description}
-            </Text>
+          <View style={styles.heroTextContainer}>
+            <Text style={styles.heroName}>{module.name}</Text>
+            <Text style={styles.heroDescription}>{module.description}</Text>
           </View>
         </View>
-
-        {/* Meta row */}
-        <View
-          style={{
-            flexDirection: 'row',
-            marginTop: 16,
-            gap: 10,
-          }}
-        >
+        <View style={styles.metaRow}>
           {[
-            { label: module.duration, icon: '⏱' },
-            { label: module.level, icon: '◈' },
+            { label: module.duration, icon: 'â±' },
+            { label: module.level, icon: 'â' },
           ].map((meta) => (
-            <View
-              key={meta.label}
-              style={{
-                flex: 1,
-                backgroundColor: '#1C1C28',
-                borderRadius: 10,
-                padding: 10,
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 6,
-              }}
-            >
-              <Text style={{ fontSize: 13 }}>{meta.icon}</Text>
-              <Text style={{ color: '#A8A8C0', fontSize: 12, fontWeight: '500' }}>{meta.label}</Text>
+            <View key={meta.label} style={styles.metaItem}>
+              <Text>{meta.icon}</Text>
+              <Text style={styles.metaText}>{meta.label}</Text>
             </View>
           ))}
         </View>
@@ -233,107 +555,40 @@ function MysterySlot() {
     }).start(() => setFlipped(true));
   }, [flipped, flipAnim]);
 
-  const cardStyle = {
-    width: '100%' as const,
-    height: 120,
-    borderRadius: 16,
-    position: 'absolute' as const,
-    backfaceVisibility: 'hidden' as const,
-  };
-
   return (
-    <View style={{ marginHorizontal: 20 }}>
-      <Text
-        style={{
-          color: '#E8E8F0',
-          fontSize: 15,
-          fontWeight: '700',
-          marginBottom: 12,
-          letterSpacing: -0.2,
-        }}
-      >
-        Slot mystère
-      </Text>
-      <Pressable onPress={handleFlip} style={{ height: 120 }}>
-        {/* Front */}
+    <View style={styles.mysteryContainer}>
+      <Text style={styles.mysteryTitle}>Slot mystÃ¨re</Text>
+      <Pressable onPress={handleFlip} style={styles.mysteryPressable}>
         <Animated.View
           style={[
-            cardStyle,
-            {
-              transform: [{ rotateY: frontInterpolate }],
-              backgroundColor: '#1C1C28',
-              borderWidth: 1.5,
-              borderColor: '#3D8BFF44',
-              borderStyle: 'dashed',
-              alignItems: 'center',
-              justifyContent: 'center',
-            },
+            styles.mysteryCardBase,
+            styles.mysteryFront,
+            { transform: [{ rotateY: frontInterpolate }] },
           ]}
         >
-          <Text style={{ color: '#3D8BFF', fontSize: 28, marginBottom: 6 }}>⟳</Text>
-          <Text style={{ color: '#A8A8C0', fontSize: 13, fontWeight: '500' }}>
-            Appuyer pour révéler
-          </Text>
-          <Text style={{ color: '#A8A8C060', fontSize: 11, marginTop: 2 }}>
-            Contenu surprise sélectionné pour vous
-          </Text>
+          <Text style={styles.mysteryFrontIcon}>â³</Text>
+          <Text style={styles.mysteryFrontText}>Appuyer pour rÃ©vÃ©ler</Text>
+          <Text style={styles.mysteryFrontSubText}>Contenu surprise sÃ©lectionnÃ© pour vous</Text>
         </Animated.View>
-        {/* Back */}
         <Animated.View
           style={[
-            cardStyle,
-            {
-              transform: [{ rotateY: backInterpolate }],
-              borderRadius: 16,
-              overflow: 'hidden',
-              borderWidth: 1,
-              borderColor: '#3D8BFF55',
-            },
+            styles.mysteryCardBase,
+            styles.mysteryBack,
+            { transform: [{ rotateY: backInterpolate }] },
           ]}
         >
           <LinearGradient
             colors={['#1C2A44', '#111118']}
-            style={{
-              flex: 1,
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: 16,
-              flexDirection: 'row',
-              gap: 14,
-            }}
+            style={styles.mysteryBackGradient}
           >
-            <View
-              style={{
-                width: 52,
-                height: 52,
-                borderRadius: 14,
-                backgroundColor: '#3D8BFF22',
-                alignItems: 'center',
-                justifyContent: 'center',
-                borderWidth: 1,
-                borderColor: '#3D8BFF44',
-              }}
-            >
-              <Text style={{ fontSize: 24 }}>🌿</Text>
+            <View style={styles.mysteryBackIconContainer}>
+              <Text style={{ fontSize: 24 }}>ð¿</Text>
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ color: '#E8E8F0', fontSize: 14, fontWeight: '700', marginBottom: 3 }}>
-                Huile essentielle Lavande
-              </Text>
-              <Text style={{ color: '#A8A8C0', fontSize: 12, lineHeight: 17 }}>
-                Bio · Grade thérapeutique · 10ml
-              </Text>
-              <View
-                style={{
-                  backgroundColor: '#3D8BFF22',
-                  borderRadius: 6,
-                  paddingHorizontal: 8,
-                  paddingVertical: 2,
-                  alignSelf: 'flex-start',
-                  marginTop: 6,
-                }}
-              >
-                <Text style={{ color: '#3D8BFF', fontSize: 10, fontWeight: '600' }}>SURPRISE ✦</Text>
+            <View style={styles.mysteryBackTextContainer}>
+              <Text style={styles.mysteryBackTitle}>Huile essentielle Lavande</Text>
+              <Text style={styles.mysteryBackSubtitle}>Bio Â· Grade thÃ©rapeutique Â· 10ml</Text>
+              <View style={styles.surpriseBadge}>
+                <Text style={styles.surpriseBadgeText}>SURPRISE â¦</Text>
               </View>
             </View>
           </LinearGradient>
@@ -372,64 +627,27 @@ function MissionItem({
       })}
     >
       <View
-        style={{
-          backgroundColor: checked ? '#3D8BFF0D' : '#111118',
-          borderRadius: 14,
-          padding: 14,
-          flexDirection: 'row',
-          alignItems: 'flex-start',
-          gap: 12,
-          borderWidth: 1,
-          borderColor: checked ? '#3D8BFF44' : '#1C1C28',
-          marginBottom: 10,
-        }}
+        style={[
+          styles.missionItem,
+          {
+            backgroundColor: checked ? '#3D8BFF0D' : '#111118',
+            borderColor: checked ? '#3D8BFF44' : '#1C1C28',
+          },
+        ]}
       >
-        {/* Icon */}
-        <View
-          style={{
-            width: 36,
-            height: 36,
-            borderRadius: 10,
-            backgroundColor: '#1C1C28',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-          }}
-        >
+        <View style={styles.missionIconContainer}>
           <Text style={{ fontSize: 16 }}>{mission.icon}</Text>
         </View>
-        {/* Text */}
-        <View style={{ flex: 1 }}>
-          <Text
-            style={{
-              color: '#E8E8F0',
-              fontSize: 13,
-              fontWeight: '600',
-              marginBottom: 3,
-            }}
-          >
-            {mission.title}
-          </Text>
-          <Text style={{ color: '#A8A8C0', fontSize: 12, lineHeight: 17 }}>
-            {mission.description}
-          </Text>
+        <View style={styles.missionTextContainer}>
+          <Text style={styles.missionTitle}>{mission.title}</Text>
+          <Text style={styles.missionDescription}>{mission.description}</Text>
         </View>
-        {/* Checkbox */}
         <Animated.View
           style={[
+            styles.checkbox,
             {
-              width: 24,
-              height: 24,
-              borderRadius: 7,
-              borderWidth: 2,
               borderColor: checked ? '#3D8BFF' : '#A8A8C044',
               backgroundColor: checked ? '#3D8BFF' : 'transparent',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-              marginTop: 2,
-            },
-            {
               transform: [
                 {
                   scale: checkAnim.interpolate({
@@ -441,22 +659,24 @@ function MissionItem({
             },
           ]}
         >
-          {checked && (
-            <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>✓</Text>
-          )}
+          {checked && <Text style={styles.checkboxCheck}>â</Text>}
         </Animated.View>
       </View>
     </Pressable>
   );
 }
 
-// ─── Main Screen ──────────────────────────────────────────────────────────────
+// âââ Main Screen ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 export default function BoxValidation() {
   const navigation = useNavigation<NavigationProp>();
+  const insets = useSafeAreaInsets();
   const [checkedMissions, setCheckedMissions] = useState<Record<string, boolean>>({});
 
-  const allChecked = MISSIONS.every((m) => checkedMissions[m.id]);
+  const { heroModule, missions, loading, fetchError } = useBoxValidation();
+
+  const allChecked =
+    missions.length > 0 && missions.every((m) => checkedMissions[m.id]);
 
   const toggleMission = useCallback((id: string) => {
     setCheckedMissions((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -466,8 +686,8 @@ export default function BoxValidation() {
     mutationFn: saveBoxValidation,
     onSuccess: () => {
       Alert.alert(
-        '✦ Box validée !',
-        'Votre sélection est confirmée. Bon voyage dans cette nouvelle expérience VIVE.',
+        'â¦ Box validÃ©e !',
+        'Votre sÃ©lection est confirmÃ©e. Bon voyage dans cette nouvelle expÃ©rience VIVE.',
         [
           {
             text: 'Voir mes boxes',
@@ -477,118 +697,93 @@ export default function BoxValidation() {
       );
     },
     onError: (err) => {
-      Alert.alert('Erreur', err.message || 'Une erreur est survenue. Veuillez réessayer.');
+      Alert.alert('Erreur', err.message || 'Une erreur est survenue. Veuillez rÃ©essayer.');
     },
   });
 
   const handleConfirm = useCallback(() => {
-    if (!allChecked) return;
+    if (!allChecked || !heroModule) return;
     mutation.mutate({
-      hero_module_id: HERO_MODULE.id,
-      missions_accepted: MISSIONS.map((m) => m.id),
+      hero_module_id: heroModule.id,
+      missions_accepted: missions.map((m) => m.id),
       validated_at: new Date().toISOString(),
     });
-  }, [allChecked, mutation]);
+  }, [allChecked, heroModule, missions, mutation]);
+
+  const ctaBottomPadding = insets.bottom > 0 ? insets.bottom : 20;
+  const scrollBottomPadding = 80 + ctaBottomPadding + 20;
+
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor="#080810" />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator color="#3D8BFF" size="large" />
+          <Text style={styles.loadingText}>Chargement...</Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (fetchError || !heroModule) {
+    return (
+      <View style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor="#080810" />
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>
+            {fetchError || 'Impossible de charger les donnÃ©es.'}
+          </Text>
+          <Pressable style={styles.retryButton} onPress={() => navigation.goBack()}>
+            <Text style={styles.retryButtonText}>Retour</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#080810' }}>
+    <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#080810" />
-      <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
+      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
         {/* Header */}
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            paddingHorizontal: 20,
-            paddingVertical: 14,
-            borderBottomWidth: 1,
-            borderBottomColor: '#1C1C28',
-          }}
-        >
-          <Pressable
-            onPress={() => navigation.goBack()}
-            style={{ marginRight: 14, padding: 4 }}
-          >
-            <Text style={{ color: '#A8A8C0', fontSize: 20 }}>←</Text>
+        <View style={styles.header}>
+          <Pressable onPress={() => navigation.goBack()} style={styles.backButton}>
+            <Text style={styles.backButtonText}>â</Text>
           </Pressable>
           <View>
-            <Text style={{ color: '#E8E8F0', fontSize: 17, fontWeight: '700', letterSpacing: -0.3 }}>
-              Validation de box
-            </Text>
-            <Text style={{ color: '#A8A8C0', fontSize: 12, marginTop: 1 }}>Confirmez votre sélection</Text>
+            <Text style={styles.headerTitle}>Validation de box</Text>
+            <Text style={styles.headerSubtitle}>Confirmez votre sÃ©lection</Text>
           </View>
         </View>
 
         <ScrollView
-          contentContainerStyle={{ paddingTop: 24, paddingBottom: 120 }}
+          contentContainerStyle={{ paddingTop: 24, paddingBottom: scrollBottomPadding }}
           showsVerticalScrollIndicator={false}
         >
           {/* Hero module */}
-          <Text
-            style={{
-              color: '#A8A8C0',
-              fontSize: 11,
-              fontWeight: '600',
-              letterSpacing: 1.6,
-              textTransform: 'uppercase',
-              marginLeft: 20,
-              marginBottom: 12,
-            }}
-          >
-            Module héros sélectionné
-          </Text>
-          <HeroModuleCard module={HERO_MODULE} />
+          <Text style={styles.sectionLabel}>Module hÃ©ros sÃ©lectionnÃ©</Text>
+          <HeroModuleCard module={heroModule} />
 
           {/* Mystery slot */}
-          <View style={{ marginTop: 28, marginBottom: 8 }}>
-            <Text
-              style={{
-                color: '#A8A8C0',
-                fontSize: 11,
-                fontWeight: '600',
-                letterSpacing: 1.6,
-                textTransform: 'uppercase',
-                marginLeft: 20,
-                marginBottom: 12,
-              }}
-            >
-              Produit accompagnateur
-            </Text>
+          <View style={styles.mysterySlotSection}>
+            <Text style={styles.sectionLabel}>Produit accompagnateur</Text>
             <MysterySlot />
           </View>
 
           {/* Serment missions */}
-          <View style={{ marginTop: 28, paddingHorizontal: 20 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-              <Text
-                style={{
-                  color: '#A8A8C0',
-                  fontSize: 11,
-                  fontWeight: '600',
-                  letterSpacing: 1.6,
-                  textTransform: 'uppercase',
-                }}
-              >
-                Serment missions
-              </Text>
-              <View
-                style={{
-                  backgroundColor: '#3D8BFF',
-                  borderRadius: 8,
-                  paddingHorizontal: 6,
-                  paddingVertical: 2,
-                  marginLeft: 8,
-                }}
-              >
-                <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>
-                  {Object.values(checkedMissions).filter(Boolean).length}/{MISSIONS.length}
+          <View style={styles.missionsSection}>
+            <View style={styles.missionsSectionHeader}>
+              <Text style={styles.missionsSectionLabel}>Serment missions</Text>
+              <View style={styles.missionsCountBadge}>
+                <Text style={styles.missionsCountText}>
+                  {Object.values(checkedMissions).filter(Boolean).length}/{missions.length}
                 </Text>
               </View>
             </View>
-            <Text style={{ color: '#A8A8C0', fontSize: 12, marginBottom: 16, lineHeight: 18 }}>
-              Engagez-vous envers ces 3 missions pour activer votre box. Votre parole est votre force.
+            <Text style={styles.missionsSubtitle}>
+              Engagez-vous envers ces missions pour activer votre box. Votre parole est votre force.
             </Text>
-            {MISSIONS.map((mission) => (
+            {missions.map((mission) => (
               <MissionItem
                 key={mission.id}
                 mission={mission}
@@ -600,31 +795,9 @@ export default function BoxValidation() {
         </ScrollView>
 
         {/* Fixed CTA */}
-        <View
-          style={{
-            position: 'absolute',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            backgroundColor: '#080810',
-            paddingHorizontal: 20,
-            paddingTop: 16,
-            paddingBottom: 34,
-            borderTopWidth: 1,
-            borderTopColor: '#1C1C28',
-          }}
-        >
+        <View style={[styles.ctaContainer, { paddingBottom: ctaBottomPadding }]}>
           {!allChecked && (
-            <Text
-              style={{
-                color: '#A8A8C0',
-                fontSize: 12,
-                textAlign: 'center',
-                marginBottom: 10,
-              }}
-            >
-              Acceptez les 3 missions pour confirmer
-            </Text>
+            <Text style={styles.ctaHint}>Acceptez toutes les missions pour confirmer</Text>
           )}
           <Pressable
             onPress={handleConfirm}
@@ -638,27 +811,13 @@ export default function BoxValidation() {
               colors={allChecked ? ['#3D8BFF', '#1A5FCC'] : ['#1C1C28', '#1C1C28']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
-              style={{
-                borderRadius: 16,
-                paddingVertical: 17,
-                alignItems: 'center',
-                flexDirection: 'row',
-                justifyContent: 'center',
-                gap: 8,
-              }}
+              style={styles.ctaGradient}
             >
               {mutation.isPending ? (
                 <ActivityIndicator color="#fff" size="small" />
               ) : (
-                <Text
-                  style={{
-                    color: allChecked ? '#fff' : '#A8A8C0',
-                    fontSize: 16,
-                    fontWeight: '700',
-                    letterSpacing: 0.3,
-                  }}
-                >
-                  Je confirme mon serment ✦
+                <Text style={[styles.ctaText, { color: allChecked ? '#fff' : '#A8A8C0' }]}>
+                  Je confirme mon serment â¦
                 </Text>
               )}
             </LinearGradient>

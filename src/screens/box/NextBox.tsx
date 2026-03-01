@@ -1,19 +1,19 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
   ScrollView,
   Pressable,
-  ImageBackground,
   Animated,
   StatusBar,
+  StyleSheet,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// âââ Types ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 type BoxStackParamList = {
   NextBox: undefined;
@@ -30,12 +30,11 @@ interface TimeLeft {
   seconds: number;
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// âââ Helpers âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 function getDeliveryDate(): Date {
   const now = new Date();
   const target = new Date(now);
-  // Next delivery: first day of next month
   target.setMonth(target.getMonth() + 1, 1);
   target.setHours(9, 0, 0, 0);
   return target;
@@ -55,131 +54,47 @@ function pad(n: number): string {
   return String(n).padStart(2, '0');
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+// âââ Sub-components âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 function CountdownUnit({ value, label }: { value: number; label: string }) {
   return (
-    <View className="items-center mx-3">
-      <View
-        style={{
-          backgroundColor: '#1C1C28',
-          borderWidth: 1,
-          borderColor: '#3D8BFF33',
-          borderRadius: 14,
-          width: 72,
-          height: 72,
-          alignItems: 'center',
-          justifyContent: 'center',
-          shadowColor: '#3D8BFF',
-          shadowOpacity: 0.18,
-          shadowRadius: 12,
-          shadowOffset: { width: 0, height: 4 },
-        }}
-      >
-        <Text
-          style={{ color: '#E8E8F0', fontSize: 30, fontWeight: '700', letterSpacing: 1 }}
-        >
-          {pad(value)}
-        </Text>
+    <View style={styles.countdownUnit}>
+      <View style={styles.countdownBox}>
+        <Text style={styles.countdownValue}>{pad(value)}</Text>
       </View>
-      <Text style={{ color: '#A8A8C0', fontSize: 11, marginTop: 6, fontWeight: '500', letterSpacing: 1.2, textTransform: 'uppercase' }}>
-        {label}
-      </Text>
+      <Text style={styles.countdownLabel}>{label}</Text>
     </View>
   );
 }
 
 function BoxIllustration() {
-  const pulseAnim = React.useRef(new Animated.Value(1)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    Animated.loop(
+    const animation = Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, { toValue: 1.04, duration: 1800, useNativeDriver: true }),
         Animated.timing(pulseAnim, { toValue: 1, duration: 1800, useNativeDriver: true }),
       ])
-    ).start();
+    );
+    animation.start();
+    return () => {
+      animation.stop();
+    };
   }, [pulseAnim]);
 
   return (
     <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
-      <View
-        style={{
-          width: 200,
-          height: 200,
-          borderRadius: 32,
-          backgroundColor: '#1C1C28',
-          borderWidth: 1.5,
-          borderColor: '#3D8BFF44',
-          alignItems: 'center',
-          justifyContent: 'center',
-          shadowColor: '#3D8BFF',
-          shadowOpacity: 0.3,
-          shadowRadius: 30,
-          shadowOffset: { width: 0, height: 8 },
-          overflow: 'hidden',
-        }}
-      >
-        {/* Blurred/locked hero placeholder */}
-        <View
-          style={{
-            position: 'absolute',
-            inset: 0,
-            backgroundColor: '#3D8BFF08',
-          }}
-        />
-        {/* Lock icon SVG-like using Views */}
-        <View style={{ alignItems: 'center' }}>
-          <View
-            style={{
-              width: 44,
-              height: 32,
-              borderRadius: 8,
-              backgroundColor: '#3D8BFF',
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginBottom: 4,
-              shadowColor: '#3D8BFF',
-              shadowOpacity: 0.6,
-              shadowRadius: 12,
-            }}
-          >
-            <View
-              style={{
-                width: 14,
-                height: 10,
-                borderRadius: 2,
-                backgroundColor: '#080810',
-              }}
-            />
+      <View style={styles.boxIllustrationContainer}>
+        <View style={styles.boxIllustrationOverlay} />
+        <View style={styles.lockIconWrapper}>
+          <View style={styles.lockBody}>
+            <View style={styles.lockKeyhole} />
           </View>
-          <View
-            style={{
-              width: 24,
-              height: 28,
-              borderTopLeftRadius: 12,
-              borderTopRightRadius: 12,
-              borderWidth: 3,
-              borderBottomWidth: 0,
-              borderColor: '#3D8BFF',
-              marginBottom: -4,
-            }}
-          />
+          <View style={styles.lockShackle} />
         </View>
-        <Text style={{ color: '#A8A8C0', fontSize: 12, marginTop: 16, fontWeight: '500', letterSpacing: 0.8 }}>
-          Contenu mystère
-        </Text>
-        {/* Blurred overlay */}
-        <View
-          style={{
-            position: 'absolute',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            height: 60,
-            backgroundColor: '#1C1C2880',
-          }}
-        />
+        <Text style={styles.mysteryText}>Contenu mystÃ¨re</Text>
+        <View style={styles.boxIllustrationBottomOverlay} />
       </View>
     </Animated.View>
   );
@@ -187,106 +102,363 @@ function BoxIllustration() {
 
 function HeroTeaser() {
   return (
-    <View
-      style={{
-        backgroundColor: '#111118',
-        borderRadius: 20,
-        padding: 20,
-        marginHorizontal: 20,
-        borderWidth: 1,
-        borderColor: '#1C1C28',
-      }}
-    >
-      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
-        <View
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius: 4,
-            backgroundColor: '#3D8BFF',
-            marginRight: 8,
-            shadowColor: '#3D8BFF',
-            shadowOpacity: 0.8,
-            shadowRadius: 4,
-          }}
-        />
-        <Text style={{ color: '#A8A8C0', fontSize: 11, fontWeight: '600', letterSpacing: 1.4, textTransform: 'uppercase' }}>
-          Module héros · Révélation
-        </Text>
+    <View style={styles.heroTeaserContainer}>
+      <View style={styles.heroTeaserHeader}>
+        <View style={styles.heroTeaserDot} />
+        <Text style={styles.heroTeaserTitle}>Module hÃ©ros Â· RÃ©vÃ©lation</Text>
       </View>
-      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-        <View
-          style={{
-            width: 64,
-            height: 64,
-            borderRadius: 14,
-            backgroundColor: '#1C1C28',
-            borderWidth: 1,
-            borderColor: '#3D8BFF22',
-            alignItems: 'center',
-            justifyContent: 'center',
-            marginRight: 14,
-          }}
-        >
-          {/* Question mark placeholder */}
-          <Text style={{ color: '#3D8BFF', fontSize: 28, fontWeight: '700' }}>?</Text>
+      <View style={styles.heroTeaserRow}>
+        <View style={styles.heroTeaserImagePlaceholder}>
+          <Text style={styles.heroTeaserQuestionMark}>?</Text>
         </View>
-        <View style={{ flex: 1 }}>
-          <View
-            style={{
-              height: 14,
-              borderRadius: 7,
-              backgroundColor: '#1C1C28',
-              marginBottom: 8,
-              width: '70%',
-            }}
-          />
-          <View
-            style={{
-              height: 10,
-              borderRadius: 5,
-              backgroundColor: '#1C1C28',
-              marginBottom: 6,
-              width: '90%',
-            }}
-          />
-          <View
-            style={{
-              height: 10,
-              borderRadius: 5,
-              backgroundColor: '#1C1C28',
-              width: '55%',
-            }}
-          />
+        <View style={styles.heroTeaserLines}>
+          <View style={[styles.heroTeaserLine, { width: '70%' }]} />
+          <View style={[styles.heroTeaserLine, { width: '90%', height: 10, borderRadius: 5 }]} />
+          <View style={[styles.heroTeaserLine, { width: '55%', height: 10, borderRadius: 5 }]} />
         </View>
       </View>
-      <View
-        style={{
-          marginTop: 16,
-          padding: 10,
-          backgroundColor: '#3D8BFF11',
-          borderRadius: 10,
-          borderWidth: 1,
-          borderColor: '#3D8BFF22',
-          flexDirection: 'row',
-          alignItems: 'center',
-        }}
-      >
-        <Text style={{ color: '#3D8BFF', fontSize: 12, fontWeight: '500' }}>
-          ✦ Révélé à J-0 lors de la validation
-        </Text>
+      <View style={styles.heroTeaserBadge}>
+        <Text style={styles.heroTeaserBadgeText}>â¦ RÃ©vÃ©lÃ© Ã  J-0 lors de la validation</Text>
       </View>
     </View>
   );
 }
 
-// ─── Main Screen ──────────────────────────────────────────────────────────────
+// âââ Styles âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+
+const styles = StyleSheet.create({
+  // CountdownUnit
+  countdownUnit: {
+    alignItems: 'center',
+    marginHorizontal: 12,
+  },
+  countdownBox: {
+    backgroundColor: '#1C1C28',
+    borderWidth: 1,
+    borderColor: '#3D8BFF33',
+    borderRadius: 14,
+    width: 72,
+    height: 72,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#3D8BFF',
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  countdownValue: {
+    color: '#E8E8F0',
+    fontSize: 30,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  countdownLabel: {
+    color: '#A8A8C0',
+    fontSize: 11,
+    marginTop: 6,
+    fontWeight: '500',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+  },
+  // BoxIllustration
+  boxIllustrationContainer: {
+    width: 200,
+    height: 200,
+    borderRadius: 32,
+    backgroundColor: '#1C1C28',
+    borderWidth: 1.5,
+    borderColor: '#3D8BFF44',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#3D8BFF',
+    shadowOpacity: 0.3,
+    shadowRadius: 30,
+    shadowOffset: { width: 0, height: 8 },
+    overflow: 'hidden',
+  },
+  boxIllustrationOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#3D8BFF08',
+  },
+  lockIconWrapper: {
+    alignItems: 'center',
+  },
+  lockBody: {
+    width: 44,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#3D8BFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+    shadowColor: '#3D8BFF',
+    shadowOpacity: 0.6,
+    shadowRadius: 12,
+  },
+  lockKeyhole: {
+    width: 14,
+    height: 10,
+    borderRadius: 2,
+    backgroundColor: '#080810',
+  },
+  lockShackle: {
+    width: 24,
+    height: 28,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+    borderWidth: 3,
+    borderBottomWidth: 0,
+    borderColor: '#3D8BFF',
+    marginBottom: -4,
+  },
+  mysteryText: {
+    color: '#A8A8C0',
+    fontSize: 12,
+    marginTop: 16,
+    fontWeight: '500',
+    letterSpacing: 0.8,
+  },
+  boxIllustrationBottomOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 60,
+    backgroundColor: '#1C1C2880',
+  },
+  // HeroTeaser
+  heroTeaserContainer: {
+    backgroundColor: '#111118',
+    borderRadius: 20,
+    padding: 20,
+    marginHorizontal: 20,
+    borderWidth: 1,
+    borderColor: '#1C1C28',
+  },
+  heroTeaserHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  heroTeaserDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#3D8BFF',
+    marginRight: 8,
+    shadowColor: '#3D8BFF',
+    shadowOpacity: 0.8,
+    shadowRadius: 4,
+  },
+  heroTeaserTitle: {
+    color: '#A8A8C0',
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 1.4,
+    textTransform: 'uppercase',
+  },
+  heroTeaserRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  heroTeaserImagePlaceholder: {
+    width: 64,
+    height: 64,
+    borderRadius: 14,
+    backgroundColor: '#1C1C28',
+    borderWidth: 1,
+    borderColor: '#3D8BFF22',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  heroTeaserQuestionMark: {
+    color: '#3D8BFF',
+    fontSize: 28,
+    fontWeight: '700',
+  },
+  heroTeaserLines: {
+    flex: 1,
+  },
+  heroTeaserLine: {
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#1C1C28',
+    marginBottom: 8,
+  },
+  heroTeaserBadge: {
+    marginTop: 16,
+    padding: 10,
+    backgroundColor: '#3D8BFF11',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#3D8BFF22',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  heroTeaserBadgeText: {
+    color: '#3D8BFF',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  // NextBox screen
+  screenContainer: {
+    flex: 1,
+    backgroundColor: '#080810',
+  },
+  safeArea: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 40,
+  },
+  headerGradient: {
+    paddingTop: 20,
+    paddingBottom: 40,
+    alignItems: 'center',
+  },
+  badge: {
+    backgroundColor: '#3D8BFF1A',
+    borderWidth: 1,
+    borderColor: '#3D8BFF44',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    marginBottom: 20,
+  },
+  badgeText: {
+    color: '#3D8BFF',
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 1.4,
+    textTransform: 'uppercase',
+  },
+  title: {
+    color: '#E8E8F0',
+    fontSize: 28,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 6,
+    letterSpacing: -0.5,
+  },
+  subtitle: {
+    color: '#A8A8C0',
+    fontSize: 15,
+    textAlign: 'center',
+    marginBottom: 32,
+    paddingHorizontal: 32,
+  },
+  countdownSection: {
+    alignItems: 'center',
+    marginBottom: 32,
+    paddingTop: 8,
+  },
+  countdownSectionLabel: {
+    color: '#A8A8C0',
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 1.6,
+    textTransform: 'uppercase',
+    marginBottom: 16,
+  },
+  countdownRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  countdownSeparator: {
+    color: '#3D8BFF',
+    fontSize: 28,
+    fontWeight: '300',
+    marginBottom: 18,
+  },
+  jxBadge: {
+    marginTop: 16,
+    backgroundColor: '#3D8BFF',
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+  },
+  jxBadgeText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 13,
+    letterSpacing: 0.5,
+  },
+  selectionTitle: {
+    color: '#E8E8F0',
+    fontSize: 17,
+    fontWeight: '700',
+    marginLeft: 20,
+    marginBottom: 12,
+    letterSpacing: -0.2,
+  },
+  infoCardsRow: {
+    flexDirection: 'row',
+    marginHorizontal: 20,
+    marginTop: 16,
+    gap: 12,
+  },
+  infoCard: {
+    flex: 1,
+    backgroundColor: '#111118',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#1C1C28',
+  },
+  infoCardIcon: {
+    color: '#3D8BFF',
+    fontSize: 18,
+    marginBottom: 6,
+  },
+  infoCardLabel: {
+    color: '#E8E8F0',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  infoCardSub: {
+    color: '#A8A8C0',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  ctaWrapper: {
+    marginHorizontal: 20,
+    marginTop: 32,
+  },
+  ctaGradient: {
+    borderRadius: 16,
+    paddingVertical: 18,
+    alignItems: 'center',
+    shadowColor: '#3D8BFF',
+    shadowOpacity: 0.4,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 8 },
+  },
+  ctaText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  ctaSubtext: {
+    color: '#A8A8C0',
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 10,
+  },
+});
+
+// âââ Main Screen ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 export default function NextBox() {
   const navigation = useNavigation<NavigationProp>();
-  const [timeLeft, setTimeLeft] = useState<TimeLeft>(calculateTimeLeft(getDeliveryDate()));
-  const deliveryDate = React.useRef(getDeliveryDate()).current;
-  const fadeAnim = React.useRef(new Animated.Value(0)).current;
+  const deliveryDate = useRef(getDeliveryDate()).current;
+  const [timeLeft, setTimeLeft] = useState<TimeLeft>(calculateTimeLeft(deliveryDate));
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 800, useNativeDriver: true }).start();
@@ -306,58 +478,29 @@ export default function NextBox() {
   const monthLabel = deliveryDate.toLocaleString('fr-FR', { month: 'long', year: 'numeric' });
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#080810' }}>
+    <View style={styles.screenContainer}>
       <StatusBar barStyle="light-content" backgroundColor="#080810" />
-      <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
         <ScrollView
-          contentContainerStyle={{ paddingBottom: 40 }}
+          contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
           {/* Header gradient */}
           <LinearGradient
             colors={['#0D1A2D', '#080810']}
-            style={{ paddingTop: 20, paddingBottom: 40, alignItems: 'center' }}
+            style={styles.headerGradient}
           >
             <Animated.View style={{ opacity: fadeAnim, alignItems: 'center' }}>
               {/* Badge */}
-              <View
-                style={{
-                  backgroundColor: '#3D8BFF1A',
-                  borderWidth: 1,
-                  borderColor: '#3D8BFF44',
-                  borderRadius: 20,
-                  paddingHorizontal: 14,
-                  paddingVertical: 5,
-                  marginBottom: 20,
-                }}
-              >
-                <Text style={{ color: '#3D8BFF', fontSize: 11, fontWeight: '600', letterSpacing: 1.4, textTransform: 'uppercase' }}>
-                  VIVE BOX · {monthLabel.toUpperCase()}
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>
+                  VIVE BOX Â· {monthLabel.toUpperCase()}
                 </Text>
               </View>
 
-              <Text
-                style={{
-                  color: '#E8E8F0',
-                  fontSize: 28,
-                  fontWeight: '700',
-                  textAlign: 'center',
-                  marginBottom: 6,
-                  letterSpacing: -0.5,
-                }}
-              >
-                Votre prochaine box
-              </Text>
-              <Text
-                style={{
-                  color: '#A8A8C0',
-                  fontSize: 15,
-                  textAlign: 'center',
-                  marginBottom: 32,
-                  paddingHorizontal: 32,
-                }}
-              >
-                Préparez-vous à recevoir votre sélection premium personnalisée
+              <Text style={styles.title}>Votre prochaine box</Text>
+              <Text style={styles.subtitle}>
+                PrÃ©parez-vous Ã  recevoir votre sÃ©lection premium personnalisÃ©e
               </Text>
 
               {/* Box illustration */}
@@ -367,83 +510,41 @@ export default function NextBox() {
 
           <Animated.View style={{ opacity: fadeAnim }}>
             {/* Countdown section */}
-            <View style={{ alignItems: 'center', marginBottom: 32, paddingTop: 8 }}>
-              <Text
-                style={{
-                  color: '#A8A8C0',
-                  fontSize: 12,
-                  fontWeight: '600',
-                  letterSpacing: 1.6,
-                  textTransform: 'uppercase',
-                  marginBottom: 16,
-                }}
-              >
-                Livraison dans
-              </Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <View style={styles.countdownSection}>
+              <Text style={styles.countdownSectionLabel}>Livraison dans</Text>
+              <View style={styles.countdownRow}>
                 <CountdownUnit value={timeLeft.days} label="Jours" />
-                <Text style={{ color: '#3D8BFF', fontSize: 28, fontWeight: '300', marginBottom: 18 }}>:</Text>
+                <Text style={styles.countdownSeparator}>:</Text>
                 <CountdownUnit value={timeLeft.hours} label="Heures" />
-                <Text style={{ color: '#3D8BFF', fontSize: 28, fontWeight: '300', marginBottom: 18 }}>:</Text>
+                <Text style={styles.countdownSeparator}>:</Text>
                 <CountdownUnit value={timeLeft.minutes} label="Minutes" />
               </View>
               {/* J-X label */}
-              <View
-                style={{
-                  marginTop: 16,
-                  backgroundColor: '#3D8BFF',
-                  borderRadius: 10,
-                  paddingHorizontal: 16,
-                  paddingVertical: 4,
-                }}
-              >
-                <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13, letterSpacing: 0.5 }}>
-                  J-{timeLeft.days}
-                </Text>
+              <View style={styles.jxBadge}>
+                <Text style={styles.jxBadgeText}>J-{timeLeft.days}</Text>
               </View>
             </View>
 
             {/* Hero item teaser */}
-            <Text
-              style={{
-                color: '#E8E8F0',
-                fontSize: 17,
-                fontWeight: '700',
-                marginLeft: 20,
-                marginBottom: 12,
-                letterSpacing: -0.2,
-              }}
-            >
-              Aperçu de votre sélection
-            </Text>
+            <Text style={styles.selectionTitle}>AperÃ§u de votre sÃ©lection</Text>
             <HeroTeaser />
 
             {/* Info cards */}
-            <View style={{ flexDirection: 'row', marginHorizontal: 20, marginTop: 16, gap: 12 }}>
+            <View style={styles.infoCardsRow}>
               {[
-                { icon: '✦', label: '3–5 produits', sub: 'sélectionnés pour vous' },
-                { icon: '◈', label: 'Valeur +120€', sub: 'garanti dans chaque box' },
+                { icon: 'â¦', label: '3â5 produits', sub: 'sÃ©lectionnÃ©s pour vous' },
+                { icon: 'â', label: 'Valeur +120â¬', sub: 'garanti dans chaque box' },
               ].map((item) => (
-                <View
-                  key={item.label}
-                  style={{
-                    flex: 1,
-                    backgroundColor: '#111118',
-                    borderRadius: 16,
-                    padding: 14,
-                    borderWidth: 1,
-                    borderColor: '#1C1C28',
-                  }}
-                >
-                  <Text style={{ color: '#3D8BFF', fontSize: 18, marginBottom: 6 }}>{item.icon}</Text>
-                  <Text style={{ color: '#E8E8F0', fontSize: 13, fontWeight: '600' }}>{item.label}</Text>
-                  <Text style={{ color: '#A8A8C0', fontSize: 11, marginTop: 2 }}>{item.sub}</Text>
+                <View key={item.label} style={styles.infoCard}>
+                  <Text style={styles.infoCardIcon}>{item.icon}</Text>
+                  <Text style={styles.infoCardLabel}>{item.label}</Text>
+                  <Text style={styles.infoCardSub}>{item.sub}</Text>
                 </View>
               ))}
             </View>
 
             {/* CTA */}
-            <View style={{ marginHorizontal: 20, marginTop: 32 }}>
+            <View style={styles.ctaWrapper}>
               <Pressable
                 onPress={handleValidate}
                 style={({ pressed }) => ({
@@ -455,36 +556,12 @@ export default function NextBox() {
                   colors={['#3D8BFF', '#1A5FCC']}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  style={{
-                    borderRadius: 16,
-                    paddingVertical: 18,
-                    alignItems: 'center',
-                    shadowColor: '#3D8BFF',
-                    shadowOpacity: 0.4,
-                    shadowRadius: 20,
-                    shadowOffset: { width: 0, height: 8 },
-                  }}
+                  style={styles.ctaGradient}
                 >
-                  <Text
-                    style={{
-                      color: '#fff',
-                      fontSize: 16,
-                      fontWeight: '700',
-                      letterSpacing: 0.3,
-                    }}
-                  >
-                    Valider ma box →
-                  </Text>
+                  <Text style={styles.ctaText}>Valider ma box â</Text>
                 </LinearGradient>
               </Pressable>
-              <Text
-                style={{
-                  color: '#A8A8C0',
-                  fontSize: 12,
-                  textAlign: 'center',
-                  marginTop: 10,
-                }}
-              >
+              <Text style={styles.ctaSubtext}>
                 Validation disponible jusqu'au dernier jour du mois
               </Text>
             </View>

@@ -7,18 +7,17 @@ import { ProfileScreen } from '../screens/gamification/ProfileScreen';
 import { QuestsScreen } from '../screens/gamification/QuestsScreen';
 import { CollectiblesScreen } from '../screens/gamification/CollectiblesScreen';
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// âââ Types âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 export type GamificationStackParamList = {
   Profile: undefined;
   Quests: undefined;
   Collectibles: undefined;
-  Settings: undefined;
 };
 
 const Stack = createNativeStackNavigator<GamificationStackParamList>();
 
-// ─── Navigator ────────────────────────────────────────────────────────────────
+// âââ Navigator ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 export const GamificationNavigator: React.FC = () => {
   return (

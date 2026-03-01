@@ -10,76 +10,12 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { useAppStore } from '../../stores/appStore';
+import type { UserProfile, NightScore, Recommendation, DailyMission, BriefingData } from './types';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface UserProfile {
-  id: string;
-  firstName: string;
-  lastName: string;
-  avatarUrl?: string;
-}
-
-interface AppState {
-  user: UserProfile | null;
-  setUser: (user: UserProfile) => void;
-}
-
-interface NightScore {
-  score: number;
-  deepSleepMinutes: number;
-  remMinutes: number;
-  awakenings: number;
-  hrv: number;
-}
-
-interface Recommendation {
-  id: string;
-  icon: string;
-  title: string;
-  description: string;
-  category: 'sommeil' | 'nutrition' | 'activite' | 'mental';
-  impact: 'high' | 'medium' | 'low';
-}
-
-interface DailyMission {
-  id: string;
-  title: string;
-  description: string;
-  xpReward: number;
-  estimatedMinutes: number;
-  type: 'movement' | 'nutrition' | 'recovery' | 'mindfulness';
-}
-
-interface BriefingData {
-  nightScore: NightScore;
-  topRecommendation: Recommendation;
-  missions: DailyMission[];
-  date: Date;
-}
-
-// ─── Zustand Store (inline for portability) ───────────────────────────────────
-
-const useAppStore = create<AppState>()(
-  persist(
-    (set) => ({
-      user: {
-        id: 'demo-user',
-        firstName: 'Alexandre',
-        lastName: 'Martin',
-      },
-      setUser: (user) => set({ user }),
-    }),
-    { name: 'vive-app-store' }
-  )
-);
-
-// ─── Mock API ─────────────────────────────────────────────────────────────────
+// âââ Mock API âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 async function fetchDailyBriefing(): Promise<BriefingData> {
-  // TODO: replace with Supabase query
   await new Promise((res) => setTimeout(res, 600));
   return {
     nightScore: {
@@ -91,10 +27,10 @@ async function fetchDailyBriefing(): Promise<BriefingData> {
     },
     topRecommendation: {
       id: 'rec-1',
-      icon: '🌙',
-      title: 'Décaler votre coucher de 30 min',
+      icon: 'ð',
+      title: 'DÃ©caler votre coucher de 30 min',
       description:
-        'Vos données indiquent que dormir à 22h30 plutôt que 23h00 augmenterait votre score de sommeil de ~12 points.',
+        'Vos donnÃ©es indiquent que dormir Ã  22h30 plutÃ´t que 23h00 augmenterait votre score de sommeil de ~12 points.',
       category: 'sommeil',
       impact: 'high',
     },
@@ -109,16 +45,16 @@ async function fetchDailyBriefing(): Promise<BriefingData> {
       },
       {
         id: 'mission-2',
-        title: 'Hydratation ciblée',
-        description: 'Boire 500ml dès le réveil',
+        title: 'Hydratation ciblÃ©e',
+        description: 'Boire 500ml dÃ¨s le rÃ©veil',
         xpReward: 80,
         estimatedMinutes: 2,
         type: 'nutrition',
       },
       {
         id: 'mission-3',
-        title: 'Cohérence cardiaque',
-        description: 'Session de 5 min — 5-5-5 respiration',
+        title: 'CohÃ©rence cardiaque',
+        description: 'Session de 5 min â 5-5-5 respiration',
         xpReward: 100,
         estimatedMinutes: 5,
         type: 'mindfulness',
@@ -128,15 +64,15 @@ async function fetchDailyBriefing(): Promise<BriefingData> {
   };
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// âââ Helpers ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 function getGreeting(firstName: string): string {
   const hour = new Date().getHours();
-  if (hour < 12) return `Bonjour, ${firstName} ☀️`;
-  if (hour < 18) return `Bon après-midi, ${firstName} 👋`;
-  return `Bonsoir, ${firstName} 🌙`;
+  if (hour < 12) return `Bonjour, ${firstName} âï¸`;
+  if (hour < 18) return `Bon aprÃ¨s-midi, ${firstName} ð`;
+  return `Bonsoir, ${firstName} ð`;
 }
 
 function getScoreColor(score: number): string {
@@ -147,29 +83,29 @@ function getScoreColor(score: number): string {
 }
 
 function getScoreLabel(score: number): string {
-  if (score >= 85) return 'Excellent';
-  if (score >= 65) return 'Bon';
-  if (score >= 45) return 'Moyen';
-  return 'À améliorer';
+  if (score >= 85) return 'Excellent â¨';
+  if (score >= 65) return 'Bon ð';
+  if (score >= 45) return 'Moyen ð';
+  return 'Ã amÃ©liorer ðª';
 }
 
 function getMissionIcon(type: DailyMission['type']): string {
   const icons: Record<DailyMission['type'], string> = {
-    movement: '🏃',
-    nutrition: '🥗',
-    recovery: '💤',
-    mindfulness: '🧘',
+    movement: 'ð',
+    nutrition: 'ð¥',
+    recovery: 'ð¤',
+    mindfulness: 'ð§',
   };
   return icons[type];
 }
 
 function getImpactBadge(impact: Recommendation['impact']): { label: string; color: string } {
-  if (impact === 'high') return { label: 'Impact élevé', color: '#34D399' };
-  if (impact === 'medium') return { label: 'Impact moyen', color: '#FBBF24' };
-  return { label: 'Impact faible', color: '#A8A8C0' };
+  if (impact === 'high') return { label: 'ð¥ Impact Ã©levÃ©', color: '#34D399' };
+  if (impact === 'medium') return { label: 'â¡ Impact moyen', color: '#FBBF24' };
+  return { label: 'ð§ Impact faible', color: '#A8A8C0' };
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+// âââ Sub-components âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 interface NightScoreCardProps {
   score: NightScore;
@@ -196,10 +132,10 @@ function NightScoreCard({ score }: NightScoreCardProps) {
   });
 
   const stats = [
-    { label: 'Sommeil profond', value: `${score.deepSleepMinutes}m`, icon: '🌑' },
-    { label: 'Sommeil REM', value: `${score.remMinutes}m`, icon: '🌀' },
-    { label: 'Réveils', value: `${score.awakenings}`, icon: '⚡' },
-    { label: 'VFC', value: `${score.hrv}ms`, icon: '❤️' },
+    { label: 'Sommeil profond', value: `${score.deepSleepMinutes}m`, icon: 'ð' },
+    { label: 'Sommeil REM', value: `${score.remMinutes}m`, icon: 'ð' },
+    { label: 'RÃ©veils', value: `${score.awakenings}`, icon: 'â¡' },
+    { label: 'VFC', value: `${score.hrv}ms`, icon: 'â¤ï¸' },
   ];
 
   return (
@@ -286,9 +222,19 @@ function MissionRow({ mission, index }: MissionRowProps) {
   );
 }
 
-// ─── Skeleton Loader ──────────────────────────────────────────────────────────
+// âââ Skeleton Loader ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
-function SkeletonBlock({ height, width = '100%', borderRadius = 10, marginBottom = 0 }: { height: number; width?: string | number; borderRadius?: number; marginBottom?: number }) {
+function SkeletonBlock({
+  height,
+  width = '100%',
+  borderRadius = 10,
+  marginBottom = 0,
+}: {
+  height: number;
+  width?: string | number;
+  borderRadius?: number;
+  marginBottom?: number;
+}) {
   const anim = useRef(new Animated.Value(0.4)).current;
 
   useEffect(() => {
@@ -327,7 +273,7 @@ function BriefingSkeleton() {
   );
 }
 
-// ─── Main Screen ──────────────────────────────────────────────────────────────
+// âââ Main Screen ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 interface DailyBriefingProps {
   onStart?: () => void;
@@ -390,9 +336,9 @@ export default function DailyBriefing({ onStart }: DailyBriefingProps) {
           <BriefingSkeleton />
         ) : isError ? (
           <View style={styles.errorContainer}>
-            <Text style={styles.errorEmoji}>⚠️</Text>
+            <Text style={styles.errorEmoji}>â ï¸</Text>
             <Text style={styles.errorText}>Impossible de charger votre bilan.</Text>
-            <Text style={styles.errorSub}>Vérifiez votre connexion et réessayez.</Text>
+            <Text style={styles.errorSub}>VÃ©rifiez votre connexion et rÃ©essayez.</Text>
           </View>
         ) : briefing ? (
           <Animated.View
@@ -406,13 +352,13 @@ export default function DailyBriefing({ onStart }: DailyBriefingProps) {
 
             {/* Top Recommendation */}
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Recommandation du jour</Text>
+              <Text style={styles.sectionTitle}>ð¡ Recommandation du jour</Text>
             </View>
             <RecommendationCard recommendation={briefing.topRecommendation} />
 
             {/* Missions preview */}
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Mission du jour</Text>
+              <Text style={styles.sectionTitle}>ð¯ Missions du jour</Text>
               <View style={styles.missionCountBadge}>
                 <Text style={styles.missionCountText}>{briefing.missions.length}</Text>
               </View>
@@ -434,11 +380,11 @@ export default function DailyBriefing({ onStart }: DailyBriefingProps) {
               onPress={handleStart}
               activeOpacity={0.85}
             >
-              <Text style={styles.ctaText}>Commencer la journée</Text>
-              <Text style={styles.ctaArrow}>→</Text>
+              <Text style={styles.ctaText}>Commencer la journÃ©e</Text>
+              <Text style={styles.ctaArrow}>â</Text>
             </TouchableOpacity>
 
-            <Text style={styles.footer}>Bilan généré par Jarvis · VIVE</Text>
+            <Text style={styles.footer}>â¨ Bilan gÃ©nÃ©rÃ© par Jarvis Â· VIVE</Text>
           </Animated.View>
         ) : null}
       </ScrollView>
@@ -446,7 +392,7 @@ export default function DailyBriefing({ onStart }: DailyBriefingProps) {
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+// âââ Styles âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 const styles = StyleSheet.create({
   safe: {

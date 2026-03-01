@@ -1,6 +1,6 @@
 /**
  * src/lib/revenuecat.ts
- * VIVE App — RevenueCat configuration & helpers
+ * VIVE App â RevenueCat configuration & helpers
  *
  * Call configureRevenueCat() once, as early as possible in the app lifecycle
  * (e.g. inside App.tsx before rendering any screens).
@@ -13,35 +13,26 @@ import Purchases, {
 } from 'react-native-purchases';
 
 // ---------------------------------------------------------------------------
-// Environment variables
+// Environment variables â utilisation exclusive de process.env.EXPO_PUBLIC_*
 // ---------------------------------------------------------------------------
-const RC_IOS_API_KEY: string =
-  (process.env.EXPO_PUBLIC_REVENUECAT_IOS_KEY as string) ||
-  // @ts-ignore
-  (typeof __DEV__ !== 'undefined' && require('react-native-config')?.default?.REVENUECAT_IOS_KEY) ||
-  '';
-
-const RC_ANDROID_API_KEY: string =
-  (process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY as string) ||
-  // @ts-ignore
-  (typeof __DEV__ !== 'undefined' && require('react-native-config')?.default?.REVENUECAT_ANDROID_KEY) ||
-  '';
+const RC_IOS_API_KEY: string = process.env.EXPO_PUBLIC_REVENUECAT_IOS_KEY ?? '';
+const RC_ANDROID_API_KEY: string = process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY ?? '';
 
 // ---------------------------------------------------------------------------
 // Constants exported for use across the app
 // ---------------------------------------------------------------------------
 
-/** RevenueCat entitlement identifiers (must match your RC dashboard). */
+/** Identifiants d'entitlement RevenueCat (doivent correspondre au dashboard RC). */
 export const ENTITLEMENTS = {
-  /** Access to premium features: advanced metrics, trends, AI coach. */
+  /** AccÃ¨s aux fonctionnalitÃ©s premium : mÃ©triques avancÃ©es, tendances, coach IA. */
   PREMIUM: 'premium',
-  /** Full elite access: all premium features + live coaching + priority support. */
+  /** AccÃ¨s Ã©lite complet : toutes les fonctionnalitÃ©s premium + coaching live + support prioritaire. */
   ELITE: 'elite',
 } as const;
 
 export type EntitlementId = (typeof ENTITLEMENTS)[keyof typeof ENTITLEMENTS];
 
-/** RevenueCat offering identifiers (must match your RC dashboard). */
+/** Identifiants d'offres RevenueCat (doivent correspondre au dashboard RC). */
 export const OFFERINGS = {
   DEFAULT: 'default',
   PREMIUM_MONTHLY: 'premium_monthly',
@@ -52,7 +43,7 @@ export const OFFERINGS = {
 
 export type OfferingId = (typeof OFFERINGS)[keyof typeof OFFERINGS];
 
-/** Product identifiers — mirrors your App Store / Play Store product IDs. */
+/** Identifiants de produits â correspond aux IDs App Store / Play Store. */
 export const PRODUCT_IDS = {
   PREMIUM_MONTHLY: 'vive_premium_monthly',
   PREMIUM_ANNUAL: 'vive_premium_annual',
@@ -65,41 +56,38 @@ export const PRODUCT_IDS = {
 // ---------------------------------------------------------------------------
 
 /**
- * Initialises the RevenueCat SDK.
+ * Initialise le SDK RevenueCat.
  *
- * Must be called once at app startup (before any purchase or entitlement
- * checks). Safe to call multiple times — RevenueCat guards against
- * double-initialisation internally.
+ * Doit Ãªtre appelÃ© une seule fois au dÃ©marrage de l'application (avant tout
+ * achat ou vÃ©rification d'entitlement). Peut Ãªtre appelÃ© plusieurs fois en
+ * toute sÃ©curitÃ© â RevenueCat gÃ¨re la double initialisation en interne.
  *
- * @param userId  Optional Supabase user ID for RevenueCat customer aliasing.
- *                Pass undefined / null before the user authenticates; call
- *                `Purchases.logIn(userId)` separately after sign-in.
+ * @param userId  Identifiant utilisateur Supabase optionnel pour l'aliasing client RevenueCat.
+ *                Passer undefined / null avant l'authentification de l'utilisateur ; appeler
+ *                `Purchases.logIn(userId)` sÃ©parÃ©ment aprÃ¨s la connexion.
  */
 export async function configureRevenueCat(userId?: string | null): Promise<void> {
   const apiKey = Platform.select({
     ios: RC_IOS_API_KEY,
     android: RC_ANDROID_API_KEY,
-    default: RC_IOS_API_KEY, // fallback for simulators / web storybook
+    default: RC_IOS_API_KEY,
   });
 
   if (!apiKey) {
     console.warn(
-      '[VIVE/RevenueCat] Missing API key for platform:', Platform.OS,
-      '— set EXPO_PUBLIC_REVENUECAT_IOS_KEY / EXPO_PUBLIC_REVENUECAT_ANDROID_KEY.',
+      '[VIVE/RevenueCat] ClÃ© API manquante pour la plateforme :',
+      Platform.OS,
+      'â DÃ©finissez EXPO_PUBLIC_REVENUECAT_IOS_KEY / EXPO_PUBLIC_REVENUECAT_ANDROID_KEY.',
     );
     return;
   }
 
-  // Enable verbose logging in dev mode for easier debugging.
   if (__DEV__) {
     Purchases.setLogLevel(LOG_LEVEL.DEBUG);
   }
 
   const config: PurchasesConfiguration = {
     apiKey,
-    // Attach the Supabase UUID so purchases are linked to the correct user
-    // immediately on first launch (avoids anonymous→identified migration edge
-    // cases in RevenueCat's backend).
     ...(userId ? { appUserID: userId } : {}),
   };
 
@@ -108,57 +96,59 @@ export async function configureRevenueCat(userId?: string | null): Promise<void>
 
     if (__DEV__) {
       console.log(
-        '[VIVE/RevenueCat] Configured successfully.',
-        userId ? `User: ${userId}` : 'Anonymous session.',
+        '[VIVE/RevenueCat] Configuration rÃ©ussie.',
+        userId ? `Utilisateur : ${userId}` : 'Session anonyme.',
       );
     }
   } catch (err) {
-    console.error('[VIVE/RevenueCat] Configuration failed:', err);
+    console.error('[VIVE/RevenueCat] Ãchec de la configuration :', err);
   }
 }
 
 /**
- * Associate an authenticated Supabase user ID with the RevenueCat customer.
- * Call this immediately after a successful sign-in.
+ * Associe un identifiant utilisateur Supabase authentifiÃ© au client RevenueCat.
+ * Appeler immÃ©diatement aprÃ¨s une connexion rÃ©ussie.
  */
 export async function loginRevenueCat(userId: string): Promise<void> {
   try {
     const { customerInfo } = await Purchases.logIn(userId);
     if (__DEV__) {
-      console.log('[VIVE/RevenueCat] Logged in. Active entitlements:',
-        Object.keys(customerInfo.entitlements.active));
+      console.log(
+        '[VIVE/RevenueCat] ConnectÃ©. Entitlements actifs :',
+        Object.keys(customerInfo.entitlements.active),
+      );
     }
   } catch (err) {
-    console.error('[VIVE/RevenueCat] logIn failed:', err);
+    console.error('[VIVE/RevenueCat] Ãchec de la connexion :', err);
   }
 }
 
 /**
- * Reset the RevenueCat customer back to an anonymous ID.
- * Call this on sign-out to avoid cross-user entitlement leakage.
+ * RÃ©initialise le client RevenueCat vers un ID anonyme.
+ * Appeler lors de la dÃ©connexion pour Ã©viter les fuites d'entitlement entre utilisateurs.
  */
 export async function logoutRevenueCat(): Promise<void> {
   try {
     await Purchases.logOut();
     if (__DEV__) {
-      console.log('[VIVE/RevenueCat] Logged out — anonymous session restored.');
+      console.log('[VIVE/RevenueCat] DÃ©connectÃ© â session anonyme restaurÃ©e.');
     }
   } catch (err) {
-    console.error('[VIVE/RevenueCat] logOut failed:', err);
+    console.error('[VIVE/RevenueCat] Ãchec de la dÃ©connexion :', err);
   }
 }
 
 /**
- * Returns whether the user currently has an active entitlement.
+ * Retourne si l'utilisateur possÃ¨de actuellement un entitlement actif.
  *
- * @param entitlementId  One of the ENTITLEMENTS constants.
+ * @param entitlementId  Un des identifiants de ENTITLEMENTS.
  */
 export async function hasEntitlement(entitlementId: EntitlementId): Promise<boolean> {
   try {
     const customerInfo = await Purchases.getCustomerInfo();
     return entitlementId in customerInfo.entitlements.active;
   } catch (err) {
-    console.error('[VIVE/RevenueCat] hasEntitlement check failed:', err);
+    console.error('[VIVE/RevenueCat] Ãchec de la vÃ©rification d\'entitlement :', err);
     return false;
   }
 }

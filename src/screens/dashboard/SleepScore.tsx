@@ -11,9 +11,9 @@ type SleepScoreProps = {
 };
 
 function getTrendIcon(trend: 'up' | 'down' | 'stable'): string {
-  if (trend === 'up') return '↑';
-  if (trend === 'down') return '↓';
-  return '→';
+  if (trend === 'up') return 'â';
+  if (trend === 'down') return 'â';
+  return 'â';
 }
 
 function getTrendColor(trend: 'up' | 'down' | 'stable'): string {
@@ -26,7 +26,7 @@ function getScoreLabel(score: number): string {
   if (score >= 85) return 'Excellent';
   if (score >= 70) return 'Bon';
   if (score >= 55) return 'Moyen';
-  return 'À améliorer';
+  return 'Ã amÃ©liorer';
 }
 
 function getScoreColor(score: number): string {
@@ -48,6 +48,11 @@ const SleepScore: React.FC<SleepScoreProps> = ({
   const cy = size / 2;
 
   const animatedValue = useRef(new Animated.Value(0)).current;
+
+  // Note: useNativeDriver: false est requis ici car strokeDashoffset est une propriÃ©tÃ© SVG
+  // qui n'est pas supportÃ©e par le thread natif d'animation React Native.
+  // Pour de meilleures performances, envisager l'utilisation de react-native-reanimated
+  // qui offre un support plus complet des animations SVG via worklets.
   const strokeDashoffsetAnim = animatedValue.interpolate({
     inputRange: [0, 100],
     outputRange: [circumference, circumference - (circumference * Math.min(score, 100)) / 100],
@@ -55,11 +60,17 @@ const SleepScore: React.FC<SleepScoreProps> = ({
 
   useEffect(() => {
     animatedValue.setValue(0);
-    Animated.timing(animatedValue, {
+    // On stocke la rÃ©fÃ©rence de l'animation pour pouvoir l'arrÃªter au dÃ©montage
+    const anim = Animated.timing(animatedValue, {
       toValue: score,
       duration: 1200,
+      // useNativeDriver doit rester Ã  false : strokeDashoffset est une propriÃ©tÃ© SVG
+      // non supportÃ©e par le driver natif. Voir react-native-reanimated pour une alternative.
       useNativeDriver: false,
-    }).start();
+    });
+    anim.start();
+    // Nettoyage : on stoppe l'animation si le composant est dÃ©montÃ© avant la fin
+    return () => anim.stop();
   }, [score]);
 
   const trendColor = getTrendColor(trend);

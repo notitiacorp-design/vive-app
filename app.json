@@ -1,0 +1,54 @@
+{
+  "expo": {
+    "name": "VIVE",
+    "slug": "vive-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": false,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0A0E1A"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.notitiacorp.vive",
+      "infoPlist": {
+        "NSHealthShareUsageDescription": "VIVE a besoin d'accéder à vos données de santé pour suivre votre activité.",
+        "NSHealthUpdateUsageDescription": "VIVE peut écrire des données d'entraînement dans Santé."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0A0E1A"
+      },
+      "package": "com.notitiacorp.vive",
+      "permissions": [
+        "android.permission.health.READ_STEPS",
+        "android.permission.health.READ_HEART_RATE",
+        "android.permission.health.READ_SLEEP"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-font"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": ""
+      }
+    },
+    "owner": "notitiacorp",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": ""
+    }
+  }
+}
